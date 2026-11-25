@@ -1,0 +1,279 @@
+{
+  "capturedAt": "2026-11-24T17:35:31.108Z",
+  "staticFiles": {
+    "kiritoModelJs": "bcce6789c6822bcefff50ea6036d7c358e61259ffa145fa02011ac727f3dfca9",
+    "kiritoModelDataJs": "122c6b805af1ec474d748d28664d72d2abf7de2431132470c97629c3af85f137",
+    "kiritoBbmodel": "4340f26260075c0cd3ac5bf07a78d6f8ee2f06c778c0587e62537c1a319fcb96"
+  },
+  "staticData": {
+    "builtinKirito": {
+      "fullHash": "ecb6bef22d20786628a41c4b4c1908b257f1787496c5c175cc652b8ca399c1ab",
+      "elementsCount": 104,
+      "groupsCount": 37,
+      "outlinerCount": 6,
+      "resolution": {
+        "width": 512,
+        "height": 512
+      },
+      "elementsHash": "67964197fe930086dc73dc77588a715f9445ad4ade83c7585f84844dd63eb34e",
+      "textureHash": "d79f90735d47875986beae8c31b04ec2beff59493a81a764ecdd7b173d557441"
+    },
+    "kiritoBbmodelData": {
+      "fullHash": "29a91c0af206f7e2026a3f9133875fceaad4b827c65cb5d371491268888f11ca",
+      "elementsCount": 104,
+      "outlinerCount": 6,
+      "resolution": {
+        "width": 512,
+        "height": 512
+      },
+      "elementsHash": "6b4cfb9b73efcfebebd42d6125468aed61150a8ed5e61ff9fadcc7d0f2b68b89",
+      "textureHash": "4201df955b3b3eda8bc82312497cddd53370db16102c47eec6f76217ebd5e5d0"
+    }
+  },
+  "runtime": {
+    "preset_kirito_standing": {
+      "structuralHash": "4d4fd033d4650295ee25b458d6dc1476bf7295486fe9b782126f66c981314a37",
+      "positionHash": "e7a6f88e923f1763bc71d755e65d9f7d4458e8120c827cad1566e8a3c15b0ed0",
+      "uvHash": "9646a55aa8bb093a4bfaf4fda6f4b17f018641ebbba8fef3134404df8ce7ae4d",
+      "nodeCount": 259,
+      "meshCount": 104,
+      "groupCount": 155,
+      "vertCount": 2496,
+      "triCount": 1248,
+      "bboxMin": [
+        -0.314902,
+        0,
+        -0.292613
+      ],
+      "bboxMax": [
+        0.314902,
+        1.787372,
+        0.223849
+      ],
+      "userDataKeys": [
+        "bbmodel",
+        "head",
+        "lForearm",
+        "mode",
+        "modelName",
+        "raw",
+        "torso"
+      ],
+      "bbmodel": true,
+      "modelName": "kirito",
+      "rigType": null
+    },
+    "preset_kirito_seated": {
+      "structuralHash": "6c0412283877a0bae41ec22965ae5c0025f78b47c1553d6e10e0cf5845c13e95",
+      "positionHash": "e7a6f88e923f1763bc71d755e65d9f7d4458e8120c827cad1566e8a3c15b0ed0",
+      "uvHash": "9646a55aa8bb093a4bfaf4fda6f4b17f018641ebbba8fef3134404df8ce7ae4d",
+      "nodeCount": 259,
+      "meshCount": 104,
+      "groupCount": 155,
+      "vertCount": 2496,
+      "triCount": 1248,
+      "bboxMin": [
+        -0.42056,
+        0.419804,
+        -0.308359
+      ],
+      "bboxMax": [
+        0.42056,
+        1.932345,
+        0.754278
+      ],
+      "userDataKeys": [
+        "bbmodel",
+        "head",
+        "lForearm",
+        "mode",
+        "modelName",
+        "raw",
+        "torso"
+      ],
+      "bbmodel": true,
+      "modelName": "kirito",
+      "rigType": null
+    },
+    "bbmodel_kirito_standing": {
+      "structuralHash": "4d4fd033d4650295ee25b458d6dc1476bf7295486fe9b782126f66c981314a37",
+      "positionHash": "e7a6f88e923f1763bc71d755e65d9f7d4458e8120c827cad1566e8a3c15b0ed0",
+      "uvHash": "9646a55aa8bb093a4bfaf4fda6f4b17f018641ebbba8fef3134404df8ce7ae4d",
+      "nodeCount": 259,
+      "meshCount": 104,
+      "groupCount": 155,
+      "vertCount": 2496,
+      "triCount": 1248,
+      "bboxMin": [
+        -0.314902,
+        0,
+        -0.292613
+      ],
+      "bboxMax": [
+        0.314902,
+        1.787372,
+        0.223849
+      ],
+      "userDataKeys": [
+        "bbmodel",
+        "head",
+        "lForearm",
+        "mode",
+        "modelName",
+        "raw",
+        "torso"
+      ],
+      "bbmodel": true,
+      "modelName": "kirito",
+      "rigType": null
+    },
+    "bbmodel_kirito_seated": {
+      "structuralHash": "6c0412283877a0bae41ec22965ae5c0025f78b47c1553d6e10e0cf5845c13e95",
+      "positionHash": "e7a6f88e923f1763bc71d755e65d9f7d4458e8120c827cad1566e8a3c15b0ed0",
+      "uvHash": "9646a55aa8bb093a4bfaf4fda6f4b17f018641ebbba8fef3134404df8ce7ae4d",
+      "nodeCount": 259,
+      "meshCount": 104,
+      "groupCount": 155,
+      "vertCount": 2496,
+      "triCount": 1248,
+      "bboxMin": [
+        -0.42056,
+        0.419804,
+        -0.308359
+      ],
+      "bboxMax": [
+        0.42056,
+        1.932345,
+        0.754278
+      ],
+      "userDataKeys": [
+        "bbmodel",
+        "head",
+        "lForearm",
+        "mode",
+        "modelName",
+        "raw",
+        "torso"
+      ],
+      "bbmodel": true,
+      "modelName": "kirito",
+      "rigType": null
+    },
+    "custom_both_standing": {
+      "structuralHash": "fda80842dace347b802b78d38713c2ba58459ff0c0ee7102dd4ebc774f76140c",
+      "positionHash": "f75f8b46e3bb1e0bce1f0123eec264d3632badb029e0c0d27c9363f9c9b7caf1",
+      "uvHash": "997768f39e98807b44c3b11b8f82951ae25456af7ff28b68317c6707f17ec4a0",
+      "nodeCount": 190,
+      "meshCount": 104,
+      "groupCount": 86,
+      "vertCount": 2496,
+      "triCount": 1248,
+      "bboxMin": [
+        -0.314902,
+        0,
+        -0.292613
+      ],
+      "bboxMax": [
+        0.314902,
+        1.787372,
+        0.223849
+      ],
+      "userDataKeys": [
+        "config",
+        "head",
+        "mode",
+        "torso"
+      ],
+      "bbmodel": null,
+      "modelName": null,
+      "rigType": null
+    },
+    "custom_both_seated": {
+      "structuralHash": "8b894f0c6faabb062af90f9342f8671119ae4cf701c65106993989b85cce86cc",
+      "positionHash": "29ca34dd56b64fba07985c15c3d087df533e0950248b4415120e6c68f0b80d67",
+      "uvHash": "f86f9bca21102452ba2a5218544414f7c82321ef41d89d5062eacc35a135c96e",
+      "nodeCount": 198,
+      "meshCount": 104,
+      "groupCount": 94,
+      "vertCount": 2496,
+      "triCount": 1248,
+      "bboxMin": [
+        -0.315227,
+        -0.128622,
+        -0.54181
+      ],
+      "bboxMax": [
+        0.315227,
+        1.557372,
+        0.49375
+      ],
+      "userDataKeys": [
+        "config",
+        "head",
+        "mode",
+        "torso"
+      ],
+      "bbmodel": null,
+      "modelName": null,
+      "rigType": null
+    },
+    "custom_coat_only_standing": {
+      "structuralHash": "fda80842dace347b802b78d38713c2ba58459ff0c0ee7102dd4ebc774f76140c",
+      "positionHash": "f75f8b46e3bb1e0bce1f0123eec264d3632badb029e0c0d27c9363f9c9b7caf1",
+      "uvHash": "997768f39e98807b44c3b11b8f82951ae25456af7ff28b68317c6707f17ec4a0",
+      "nodeCount": 190,
+      "meshCount": 104,
+      "groupCount": 86,
+      "vertCount": 2496,
+      "triCount": 1248,
+      "bboxMin": [
+        -0.314902,
+        0,
+        -0.292613
+      ],
+      "bboxMax": [
+        0.314902,
+        1.787372,
+        0.223849
+      ],
+      "userDataKeys": [
+        "config",
+        "head",
+        "mode",
+        "torso"
+      ],
+      "bbmodel": null,
+      "modelName": null,
+      "rigType": null
+    },
+    "custom_hair_only_standing": {
+      "structuralHash": "fda80842dace347b802b78d38713c2ba58459ff0c0ee7102dd4ebc774f76140c",
+      "positionHash": "f75f8b46e3bb1e0bce1f0123eec264d3632badb029e0c0d27c9363f9c9b7caf1",
+      "uvHash": "997768f39e98807b44c3b11b8f82951ae25456af7ff28b68317c6707f17ec4a0",
+      "nodeCount": 190,
+      "meshCount": 104,
+      "groupCount": 86,
+      "vertCount": 2496,
+      "triCount": 1248,
+      "bboxMin": [
+        -0.314902,
+        0,
+        -0.292613
+      ],
+      "bboxMax": [
+        0.314902,
+        1.787372,
+        0.223849
+      ],
+      "userDataKeys": [
+        "config",
+        "head",
+        "mode",
+        "torso"
+      ],
+      "bbmodel": null,
+      "modelName": null,
+      "rigType": null
+    }
+  }
+}
