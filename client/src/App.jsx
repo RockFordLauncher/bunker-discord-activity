@@ -230,7 +230,10 @@ export default function App() {
     });
 
     socket.on('player_left', (data) => {
-      setGameState(prev => ({ ...prev, players: data.players || prev.players }));
+      setGameState(prev => ({
+        ...prev,
+        players: (data.players || prev.players).filter(p => p.id !== data.playerId && p.connected !== false),
+      }));
     });
 
     socket.on('error', (data) => {

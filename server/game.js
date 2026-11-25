@@ -250,8 +250,15 @@ export class BunkerGame {
     const room = this.rooms.get(roomCode);
     if (!room) return null;
 
-    if (room.players.has(socketId)) {
-      room.players.get(socketId).connected = false;
+    if (room.phase === GAME_PHASES.LOBBY) {
+      // In lobby: completely delete player from the room
+      room.players.delete(socketId);
+      delete room.hands[socketId];
+    } else {
+      // During active match: mark as disconnected so their slot/cards remain
+      if (room.players.has(socketId)) {
+        room.players.get(socketId).connected = false;
+      }
     }
 
     // If host leaves and game hasn't started — migrate host

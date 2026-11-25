@@ -109,6 +109,8 @@ export class Bunker3DScene {
     this.currentYaw = 0;
     this.currentPitch = 0;
     this.isDragging = false;
+    this.cameraMode = false; // toggled with Alt: free mouse look without holding LMB
+    this._pointerLockWasActive = false;
     this.previousMousePosition = { x: 0, y: 0 };
 
     // Lights
@@ -1527,28 +1529,87 @@ export class Bunker3DScene {
   }
 
   // ─────────────────────────────────────────────────────────────────────────
-  // 9. Input & Mouse Look (Clamped FPV)
+  // 9. Input & Mouse Look (Clamped FPV + Alt Camera/Cursor Toggle)
   // ─────────────────────────────────────────────────────────────────────────
+  toggleCameraMode(forceState) {
+    const next = typeof forceState === 'boolean' ? forceState : !this.cameraMode;
+    this.cameraMode = next;
+    this.isDragging = false;
+
+    if (next) {
+      this.previousMousePosition = null;
+      this.mouse.set(0, 0);
+      try {
+        const res = this.container.requestPointerLock?.();
+        if (res && typeof res.catch === 'function') res.catch(() => {});
+      } catch (_) {}
+    } else {
+      this._pointerLockWasActive = false;
+      if (document.pointerLockElement === this.container) {
+        try { document.exitPointerLock?.(); } catch (_) {}
+      }
+    }
+    this.updateCameraModeUI();
+  }
+
+  updateCameraModeUI() {
+    if (this._crosshairEl) {
+      this._crosshairEl.style.display = this.cameraMode ? 'block' : 'none';
+    }
+    if (this._modeHintEl) {
+      this._modeHintEl.textContent = this.cameraMode ? '[ALT] КАМЕРА' : '[ALT] КУРСОР';
+      this._modeHintEl.style.borderColor = this.cameraMode ? 'rgba(56, 189, 248, 0.7)' : 'rgba(255, 255, 255, 0.2)';
+      this._modeHintEl.style.color = this.cameraMode ? '#7dd3fc' : 'rgba(255, 255, 255, 0.65)';
+    }
+  }
+
   bindEvents() {
+    // Lightweight center reticle + mode badge (non-blocking pointer-events: none)
+    const crosshair = document.createElement('div');
+    crosshair.style.cssText = 'position:absolute;left:50%;top:50%;width:6px;height:6px;margin:-3px 0 0 -3px;border-radius:50%;background:rgba(255,255,255,0.85);box-shadow:0 0 4px rgba(0,0,0,0.9);pointer-events:none;z-index:20;display:none;';
+    this.container.appendChild(crosshair);
+    this._crosshairEl = crosshair;
+
+    const modeHint = document.createElement('div');
+    modeHint.style.cssText = 'position:absolute;top:12px;left:50%;transform:translateX(-50%);padding:3px 10px;border-radius:4px;background:rgba(10,14,20,0.65);border:1px solid rgba(255,255,255,0.2);font-family:monospace;font-size:11px;letter-spacing:0.08em;color:rgba(255,255,255,0.65);pointer-events:none;z-index:20;';
+    modeHint.textContent = '[ALT] КУРСОР';
+    this.container.appendChild(modeHint);
+    this._modeHintEl = modeHint;
+
     this.onMouseDown = (e) => {
       bunkerAudio.init();
       bunkerAudio.resume();
 
       if (e.button === 0) {
-        this.isDragging = true;
-        this.previousMousePosition = { x: e.clientX, y: e.clientY };
+        if (!this.cameraMode) {
+          this.isDragging = true;
+          this.previousMousePosition = { x: e.clientX, y: e.clientY };
+        }
         this.handleCardClick();
       }
     };
 
     this.onMouseMove = (e) => {
-      const rect = this.container.getBoundingClientRect();
-      this.mouse.x = ((e.clientX - rect.left) / this.width) * 2 - 1;
-      this.mouse.y = -((e.clientY - rect.top) / this.height) * 2 + 1;
+      const isLocked = document.pointerLockElement === this.container;
+      if (isLocked) {
+        this.mouse.set(0, 0);
+      } else {
+        const rect = this.container.getBoundingClientRect();
+        this.mouse.x = ((e.clientX - rect.left) / this.width) * 2 - 1;
+        this.mouse.y = -((e.clientY - rect.top) / this.height) * 2 + 1;
+      }
 
-      if (this.isDragging) {
-        const deltaX = e.clientX - this.previousMousePosition.x;
-        const deltaY = e.clientY - this.previousMousePosition.y;
+      if (isLocked || this.cameraMode || this.isDragging) {
+        let deltaX = 0;
+        let deltaY = 0;
+        if (isLocked) {
+          deltaX = e.movementX || 0;
+          deltaY = e.movementY || 0;
+        } else if (this.previousMousePosition) {
+          deltaX = e.clientX - this.previousMousePosition.x;
+          deltaY = e.clientY - this.previousMousePosition.y;
+        }
+        this.previousMousePosition = { x: e.clientX, y: e.clientY };
 
         // Realistic human neck limits:
         // Yaw: ±115 degrees (approx ±2.0 radians)
@@ -1558,7 +1619,7 @@ export class Bunker3DScene {
 
         this.targetYaw = Math.max(-2.0, Math.min(2.0, this.targetYaw));
         this.targetPitch = Math.max(-0.8, Math.min(0.55, this.targetPitch));
-
+      } else {
         this.previousMousePosition = { x: e.clientX, y: e.clientY };
       }
 
@@ -1569,7 +1630,28 @@ export class Bunker3DScene {
       this.isDragging = false;
     };
 
+    this.onPointerLockChange = () => {
+      const locked = document.pointerLockElement === this.container;
+      if (locked) {
+        this._pointerLockWasActive = true;
+      } else if (this.cameraMode && this._pointerLockWasActive) {
+        this.cameraMode = false;
+        this._pointerLockWasActive = false;
+        this.updateCameraModeUI();
+      }
+    };
+
     this.onKeyDown = (e) => {
+      if (e.code === 'AltLeft' || e.code === 'AltRight') {
+        if (document.activeElement && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA')) {
+          return;
+        }
+        e.preventDefault();
+        if (!e.repeat) {
+          this.toggleCameraMode();
+        }
+        return;
+      }
       if (e.code === 'Space') {
         if (document.activeElement && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA')) {
           return;
@@ -1592,6 +1674,7 @@ export class Bunker3DScene {
     window.addEventListener('mouseup', this.onMouseUp);
     window.addEventListener('keydown', this.onKeyDown);
     window.addEventListener('resize', this.onResize);
+    document.addEventListener('pointerlockchange', this.onPointerLockChange);
   }
 
   checkHover() {
@@ -1915,6 +1998,12 @@ export class Bunker3DScene {
     window.removeEventListener('mouseup', this.onMouseUp);
     window.removeEventListener('keydown', this.onKeyDown);
     window.removeEventListener('resize', this.onResize);
+    document.removeEventListener('pointerlockchange', this.onPointerLockChange);
+    if (document.pointerLockElement === this.container) {
+      try { document.exitPointerLock?.(); } catch (_) {}
+    }
+    if (this._crosshairEl?.parentNode) this._crosshairEl.parentNode.removeChild(this._crosshairEl);
+    if (this._modeHintEl?.parentNode) this._modeHintEl.parentNode.removeChild(this._modeHintEl);
     if (this.renderer && this.renderer.domElement) {
       this.container.removeChild(this.renderer.domElement);
       this.renderer.dispose();
