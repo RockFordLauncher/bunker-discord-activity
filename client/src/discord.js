@@ -1,5 +1,7 @@
 export let discordSdk = null;
 
+const STORAGE_TOKEN_KEY = 'bunker_discord_token';
+
 /**
  * Setup Discord SDK and get user info.
  * Safe to call outside Discord — returns null user.
@@ -11,7 +13,32 @@ export async function setupDiscord() {
     discordSdk = new DiscordSDK(CLIENT_ID);
     await discordSdk.ready();
 
-    // 1. Authorize with Discord Client (try silent first, then interactive consent if needed)
+    // 0. Try cached access_token first so the user is never asked to authorize again
+    try {
+      const savedToken = localStorage.getItem(STORAGE_TOKEN_KEY);
+      if (savedToken) {
+        const auth = await discordSdk.commands.authenticate({ access_token: savedToken });
+        if (auth?.user) {
+          return {
+            ready: true,
+            inDiscord: true,
+            user: {
+              id: auth.user.id,
+              username: auth.user.global_name || auth.user.username,
+              avatar: auth.user.avatar,
+              avatarUrl: auth.user.avatar
+                ? `https://cdn.discordapp.com/avatars/${auth.user.id}/${auth.user.avatar}.png?size=128`
+                : null,
+            },
+          };
+        }
+      }
+    } catch {
+      // Cached token expired or invalid — continue to OAuth flow
+      try { localStorage.removeItem(STORAGE_TOKEN_KEY); } catch {}
+    }
+
+    // 1. Authorize with Discord Client (only 'identify' needed; try silent first, then consent if needed)
     let authCode = null;
     try {
       const res = await discordSdk.commands.authorize({
@@ -19,7 +46,7 @@ export async function setupDiscord() {
         response_type: "code",
         state: "",
         prompt: "none",
-        scope: ["identify", "guilds"],
+        scope: ["identify"],
       });
       authCode = res?.code;
     } catch (silentErr) {
@@ -28,7 +55,7 @@ export async function setupDiscord() {
         client_id: CLIENT_ID,
         response_type: "code",
         state: "",
-        scope: ["identify", "guilds"],
+        scope: ["identify"],
       });
       authCode = res?.code;
     }
@@ -67,6 +94,8 @@ export async function setupDiscord() {
 
     if (tokenRes && tokenRes.ok) {
       const { access_token, user: serverUser } = await tokenRes.json();
+      try { localStorage.setItem(STORAGE_TOKEN_KEY, access_token); } catch {}
+
       // 3. Authenticate SDK session
       const auth = await discordSdk.commands.authenticate({ access_token });
       const user = auth?.user || serverUser;
