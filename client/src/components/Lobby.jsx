@@ -29,7 +29,14 @@ export const BUNKER_THEMES = [
 
 export default function Lobby({ gameState, setGameState }) {
   const { screen, discordUser } = gameState;
-  const [nickname, setNickname] = useState(discordUser?.username || '');
+  const [nickname, setNickname] = useState(() => {
+    if (discordUser?.username) return discordUser.username;
+    try {
+      return localStorage.getItem('bunker_nickname') || '';
+    } catch {
+      return '';
+    }
+  });
   const [joinCode, setJoinCode] = useState('');
   const [loading, setLoading] = useState(false);
   const [selectedPack, setSelectedPack] = useState('base');
@@ -53,14 +60,23 @@ export default function Lobby({ gameState, setGameState }) {
     }
   });
 
-  const displayName = discordUser?.username || nickname || 'ОПЕРАТОР';
+  const displayName = discordUser?.username || nickname.trim() || 'Гость';
   const avatarUrl = discordUser?.avatarUrl || null;
 
   useEffect(() => {
-    if (discordUser?.username && !nickname) {
+    if (discordUser?.username) {
       setNickname(discordUser.username);
     }
   }, [discordUser]);
+
+  const handleNicknameChange = (val) => {
+    setNickname(val);
+    try {
+      localStorage.setItem('bunker_nickname', val);
+    } catch {
+      // ignore
+    }
+  };
 
   useEffect(() => {
     if (gameState?.bunkerTheme && gameState.bunkerTheme !== bunkerTheme) {
@@ -121,7 +137,9 @@ export default function Lobby({ gameState, setGameState }) {
   const activeThemeObj = BUNKER_THEMES.find(t => t.id === bunkerTheme) || BUNKER_THEMES[0];
   const activeModelLabel = customization?.customBBModel
     ? (customization.modelName || 'BBMODEL // ПОЛЬЗОВАТЕЛЬСКАЯ')
-    : (THEME_PRESETS.find(p => p.id === customization?.preset)?.name || 'СТАНДАРТНЫЙ ОПЕРАТОР');
+    : (THEME_PRESETS.find(p => p.id === customization?.preset)?.name || 'СТАНДАРТНЫЙ ПЕРСОНАЖ');
+
+  const isDiscordLinked = Boolean(discordUser?.id);
 
   const TopHeader = ({ subtitle }) => (
     <div style={styles.topBar}>
@@ -133,20 +151,25 @@ export default function Lobby({ gameState, setGameState }) {
         </div>
       </div>
 
-      <div style={styles.operatorCard}>
-        <div style={styles.operatorAvatar}>
+      <div style={styles.profilePill(isDiscordLinked)}>
+        <div style={styles.profileAvatar(isDiscordLinked)}>
           {avatarUrl ? (
             <img src={avatarUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
           ) : (
-            <span>{(displayName || '?')[0].toUpperCase()}</span>
+            <span>{(displayName || 'Г')[0].toUpperCase()}</span>
           )}
+          <span style={styles.avatarStatusRing(isDiscordLinked)} />
         </div>
-        <div>
-          <div style={styles.operatorMeta}>
-            <span style={styles.statusDot} />
-            {discordUser ? 'DISCORD LINK' : 'LOCAL SESSION'}
+        <div style={styles.profileInfo}>
+          <div style={styles.profileNameRow}>
+            <span style={styles.profileName}>{displayName}</span>
+            <span style={styles.profileSourceTag(isDiscordLinked)}>
+              {isDiscordLinked ? 'DISCORD' : 'ВЕБ'}
+            </span>
           </div>
-          <div style={styles.operatorName}>{displayName.toUpperCase()}</div>
+          <div style={styles.profileSub}>
+            {isDiscordLinked ? 'Профиль синхронизирован' : 'Локальный профиль'}
+          </div>
         </div>
       </div>
     </div>
@@ -220,7 +243,7 @@ export default function Lobby({ gameState, setGameState }) {
                   onClick={() => setShowCustomization(true)}
                 >
                   <span style={styles.menuIdx}>03</span>
-                  <span style={styles.menuText}>ВНЕШНОСТЬ ОПЕРАТОРА</span>
+                  <span style={styles.menuText}>ВНЕШНОСТЬ ПЕРСОНАЖА</span>
                   <span style={styles.menuArrow}>→</span>
                 </button>
               </div>
@@ -300,10 +323,10 @@ export default function Lobby({ gameState, setGameState }) {
             {/* Left column: Callsign + Bunker 3D Theme */}
             <div style={styles.createLeft}>
               <div style={styles.fieldGroup}>
-                <label style={styles.fieldLabel}>ПОЗЫВНОЙ ОПЕРАТОРА</label>
+                <label style={styles.fieldLabel}>ИМЯ ИГРОКА</label>
                 <input
                   value={nickname}
-                  onChange={e => setNickname(e.target.value)}
+                  onChange={e => handleNicknameChange(e.target.value)}
                   placeholder={displayName}
                   maxLength={24}
                 />
@@ -402,10 +425,10 @@ export default function Lobby({ gameState, setGameState }) {
 
           <div style={styles.joinBody}>
             <div style={styles.fieldGroup}>
-              <label style={styles.fieldLabel}>ПОЗЫВНОЙ ОПЕРАТОРА</label>
+              <label style={styles.fieldLabel}>ИМЯ ИГРОКА</label>
               <input
                 value={nickname}
-                onChange={e => setNickname(e.target.value)}
+                onChange={e => handleNicknameChange(e.target.value)}
                 placeholder={displayName}
                 maxLength={24}
               />
@@ -516,18 +539,24 @@ const styles = {
     letterSpacing: 2,
     marginTop: 5,
   },
-  operatorCard: {
+  profilePill: (linked) => ({
     display: 'flex',
     alignItems: 'center',
     gap: 12,
-    padding: '8px 14px',
-    border: '1px solid var(--border-dim)',
-    background: '#0d1015',
-  },
-  operatorAvatar: {
-    width: 34,
-    height: 34,
-    border: '1px solid var(--border)',
+    padding: '7px 14px 7px 9px',
+    borderRadius: 10,
+    border: `1px solid ${linked ? 'rgba(88, 101, 242, 0.55)' : 'rgba(255, 255, 255, 0.12)'}`,
+    background: linked
+      ? 'linear-gradient(135deg, rgba(88, 101, 242, 0.14) 0%, rgba(16, 20, 28, 0.95) 100%)'
+      : 'linear-gradient(135deg, rgba(28, 33, 44, 0.85) 0%, rgba(13, 16, 21, 0.95) 100%)',
+    boxShadow: linked ? '0 2px 14px rgba(88, 101, 242, 0.18)' : 'none',
+  }),
+  profileAvatar: (linked) => ({
+    position: 'relative',
+    width: 36,
+    height: 36,
+    borderRadius: '50%',
+    border: `2px solid ${linked ? '#5865F2' : 'var(--amber)'}`,
     background: '#181c24',
     display: 'flex',
     alignItems: 'center',
@@ -536,28 +565,47 @@ const styles = {
     fontWeight: 700,
     color: 'var(--amber-bright)',
     overflow: 'hidden',
+    flexShrink: 0,
+  }),
+  avatarStatusRing: (linked) => ({
+    position: 'absolute',
+    bottom: -1,
+    right: -1,
+    width: 10,
+    height: 10,
+    borderRadius: '50%',
+    background: linked ? '#23a55a' : '#d99b26',
+    border: '2px solid #0d1015',
+  }),
+  profileInfo: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 2,
   },
-  operatorMeta: {
+  profileNameRow: {
     display: 'flex',
     alignItems: 'center',
-    gap: 6,
-    fontSize: 9,
-    color: 'var(--text-dim)',
-    letterSpacing: 1.5,
+    gap: 8,
   },
-  statusDot: {
-    width: 6,
-    height: 6,
-    borderRadius: '50%',
-    background: 'var(--success)',
-    display: 'inline-block',
-  },
-  operatorName: {
+  profileName: {
     fontSize: 13,
-    fontWeight: 600,
-    letterSpacing: 1,
+    fontWeight: 700,
+    letterSpacing: 0.4,
     color: 'var(--text)',
-    marginTop: 2,
+  },
+  profileSourceTag: (linked) => ({
+    fontSize: 9,
+    fontWeight: 700,
+    letterSpacing: 1,
+    padding: '2px 6px',
+    borderRadius: 4,
+    background: linked ? 'rgba(88, 101, 242, 0.28)' : 'rgba(255, 255, 255, 0.08)',
+    color: linked ? '#b8c0ff' : 'var(--text-dim)',
+  }),
+  profileSub: {
+    fontSize: 10,
+    color: 'var(--text-dim)',
+    letterSpacing: 0.3,
   },
   lobbyGrid: {
     display: 'grid',

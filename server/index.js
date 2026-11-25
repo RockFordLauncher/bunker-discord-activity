@@ -91,7 +91,20 @@ app.post('/api/token', async (req, res) => {
       return res.status(discordRes.status).json(data);
     }
 
-    res.json({ access_token: data.access_token });
+    // Fetch user profile on server side (bypasses iframe CSP restrictions)
+    let user = null;
+    try {
+      const userRes = await fetch('https://discord.com/api/users/@me', {
+        headers: { Authorization: `Bearer ${data.access_token}` },
+      });
+      if (userRes.ok) {
+        user = await userRes.json();
+      }
+    } catch (userErr) {
+      console.warn('[/api/token] Failed to fetch @me:', userErr.message);
+    }
+
+    res.json({ access_token: data.access_token, user });
   } catch (err) {
     console.error('[/api/token] Error exchanging token:', err);
     res.status(500).json({ error: err.message });

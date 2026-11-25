@@ -11,52 +11,72 @@ export async function setupDiscord() {
     discordSdk = new DiscordSDK(CLIENT_ID);
     await discordSdk.ready();
 
-    // 1. Authorize with Discord Client
-    const { code } = await discordSdk.commands.authorize({
-      client_id: CLIENT_ID,
-      response_type: "code",
-      state: "",
-      prompt: "none",
-      scope: ["identify", "guilds"],
-    });
+    // 1. Authorize with Discord Client (try silent first, then interactive consent if needed)
+    let authCode = null;
+    try {
+      const res = await discordSdk.commands.authorize({
+        client_id: CLIENT_ID,
+        response_type: "code",
+        state: "",
+        prompt: "none",
+        scope: ["identify", "guilds"],
+      });
+      authCode = res?.code;
+    } catch (silentErr) {
+      console.warn('[Discord] Silent authorize failed, prompting consent:', silentErr?.message || silentErr);
+      const res = await discordSdk.commands.authorize({
+        client_id: CLIENT_ID,
+        response_type: "code",
+        state: "",
+        scope: ["identify", "guilds"],
+      });
+      authCode = res?.code;
+    }
 
-    // 2. Exchange authorization code for access token via backend API
+    if (!authCode) {
+      return { ready: true, inDiscord: true, user: null, error: 'No authorization code' };
+    }
+
+    // 2. Exchange authorization code for access token & user profile via backend API
     const tokenRes = await fetch('/api/token', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ code }),
+      body: JSON.stringify({ code: authCode }),
     }).catch(() => fetch('https://bunker-discord-activity.onrender.com/api/token', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ code }),
+      body: JSON.stringify({ code: authCode }),
     }));
 
     if (tokenRes && tokenRes.ok) {
-      const { access_token } = await tokenRes.json();
+      const { access_token, user: serverUser } = await tokenRes.json();
       // 3. Authenticate SDK session
       const auth = await discordSdk.commands.authenticate({ access_token });
-      const user = auth?.user || await (await fetch('https://discord.com/api/users/@me', {
-        headers: { Authorization: `Bearer ${access_token}` },
-      })).json();
+      const user = auth?.user || serverUser;
 
-      return {
-        ready: true,
-        user: {
-          id: user.id,
-          username: user.global_name || user.username,
-          avatar: user.avatar,
-          avatarUrl: user.avatar
-            ? `https://cdn.discordapp.com/avatars/${user.id}/${user.avatar}.png?size=128`
-            : null,
-        },
-      };
+      if (user) {
+        return {
+          ready: true,
+          inDiscord: true,
+          user: {
+            id: user.id,
+            username: user.global_name || user.username,
+            avatar: user.avatar,
+            avatarUrl: user.avatar
+              ? `https://cdn.discordapp.com/avatars/${user.id}/${user.avatar}.png?size=128`
+              : null,
+          },
+        };
+      }
+      return { ready: true, inDiscord: true, user: null, error: 'User object missing' };
     } else {
       const errBody = tokenRes ? await tokenRes.text() : 'No response';
       console.error('[Discord] Token exchange failed:', tokenRes?.status, errBody);
-      return { ready: true, user: null, error: errBody };
+      return { ready: true, inDiscord: true, user: null, error: errBody };
     }
   } catch (e) {
-    console.warn('[Discord] Not in Discord iframe or auth failed:', e.message);
-    return { ready: false, user: null, error: e.message };
+    console.warn('[Discord] Not in Discord iframe or auth failed:', e?.message || e);
+    const inIframe = typeof window !== 'undefined' && window.self !== window.top;
+    return { ready: false, inDiscord: inIframe, user: null, error: e?.message || String(e) };
   }
 }

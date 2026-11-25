@@ -145,17 +145,17 @@ export default function WaitingRoom({ gameState, setGameState }) {
         <div style={styles.gridPanel}>
           <div style={styles.playerGrid}>
             {slots.map((player, i) => (
-              <div key={i} style={styles.slot(!!player)}>
+              <div key={i} style={styles.slot(!!player, player?.isHost, player?.isBot)}>
                 {player ? (
                   <>
                     <div style={styles.slotTopRow}>
                       <span style={styles.slotIndex}>#{String(i + 1).padStart(2, '0')}</span>
                       <span style={styles.roleTag(player.isHost, player.isBot)}>
-                        {player.isHost ? 'HOST' : (player.isBot ? 'BOT' : 'LIVE')}
+                        {player.isHost ? 'ХОСТ' : (player.isBot ? 'БОТ' : 'ИГРОК')}
                       </span>
                     </div>
 
-                    <div style={styles.slotAvatar}>
+                    <div style={styles.slotAvatar(player.isHost, player.isBot)}>
                       {player.avatarUrl ? (
                         <img src={player.avatarUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                       ) : (
@@ -166,10 +166,10 @@ export default function WaitingRoom({ gameState, setGameState }) {
                     </div>
 
                     <div style={styles.slotName}>
-                      {(player.username || 'UNKNOWN').toUpperCase()}
+                      {player.username || 'Игрок'}
                     </div>
-                    <div style={styles.slotRole}>
-                      {player.isHost ? 'ЛИДЕР' : (player.isBot ? 'БОТ' : 'ОПЕРАТОР')}
+                    <div style={styles.slotRole(player.isHost, player.isBot)}>
+                      {player.isHost ? 'Создатель комнаты' : (player.isBot ? 'ИИ-участник' : 'В сети')}
                     </div>
                   </>
                 ) : (
@@ -379,15 +379,21 @@ const styles = {
     gridTemplateColumns: 'repeat(auto-fill, minmax(145px, 1fr))',
     gap: 10,
   },
-  slot: (filled) => ({
-    border: `1px solid ${filled ? 'var(--border)' : 'var(--border-dim)'}`,
-    background: filled ? 'linear-gradient(180deg, #161b23 0%, #11151b 100%)' : 'rgba(13, 16, 21, 0.5)',
-    padding: 10,
+  slot: (filled, isHost, isBot) => ({
+    borderRadius: 10,
+    border: `1px solid ${filled ? (isHost ? 'rgba(217, 155, 38, 0.55)' : (isBot ? 'rgba(255,255,255,0.12)' : 'rgba(70, 168, 112, 0.45)')) : 'var(--border-dim)'}`,
+    background: filled
+      ? (isHost
+        ? 'linear-gradient(180deg, rgba(217, 155, 38, 0.12) 0%, #11151b 100%)'
+        : 'linear-gradient(180deg, #181e28 0%, #10141a 100%)')
+      : 'rgba(13, 16, 21, 0.45)',
+    padding: '12px 10px',
     display: 'flex',
     flexDirection: 'column',
     alignItems: 'center',
-    minHeight: 142,
+    minHeight: 148,
     justifyContent: 'space-between',
+    transition: 'border-color 0.2s ease',
   }),
   slotTopRow: {
     width: '100%',
@@ -404,20 +410,23 @@ const styles = {
   roleTag: (isHost, isBot) => ({
     fontSize: 9,
     fontWeight: 700,
-    padding: '1px 5px',
-    letterSpacing: 1,
-    background: isHost ? 'var(--amber)' : (isBot ? '#28303d' : 'rgba(70, 168, 112, 0.2)'),
-    color: isHost ? '#0b0d10' : (isBot ? 'var(--text-muted)' : 'var(--success)'),
-    border: `1px solid ${isHost ? 'var(--amber)' : (isBot ? 'var(--border)' : 'var(--success)')}`,
+    padding: '2px 7px',
+    borderRadius: 99,
+    letterSpacing: 0.8,
+    background: isHost ? 'var(--amber)' : (isBot ? 'rgba(255,255,255,0.08)' : 'rgba(70, 168, 112, 0.2)'),
+    color: isHost ? '#0b0d10' : (isBot ? 'var(--text-muted)' : '#6ee7a0'),
+    border: `1px solid ${isHost ? 'var(--amber)' : (isBot ? 'rgba(255,255,255,0.15)' : 'rgba(70, 168, 112, 0.5)')}`,
   }),
-  slotAvatar: {
-    width: 54,
-    height: 54,
-    border: '1px solid var(--border)',
+  slotAvatar: (isHost, isBot) => ({
+    width: 56,
+    height: 56,
+    borderRadius: '50%',
+    border: `2px solid ${isHost ? 'var(--amber)' : (isBot ? 'rgba(255,255,255,0.18)' : 'rgba(70, 168, 112, 0.7)')}`,
     background: '#0d1015',
     overflow: 'hidden',
     marginBottom: 6,
-  },
+    boxShadow: isHost ? '0 0 12px rgba(217, 155, 38, 0.25)' : 'none',
+  }),
   avatarFallback: {
     width: '100%',
     height: '100%',
@@ -429,19 +438,19 @@ const styles = {
     color: 'var(--text-muted)',
   },
   slotName: {
-    fontSize: 12,
-    fontWeight: 600,
-    letterSpacing: 0.8,
+    fontSize: 13,
+    fontWeight: 700,
+    letterSpacing: 0.3,
     textAlign: 'center',
     wordBreak: 'break-word',
     color: 'var(--text)',
   },
-  slotRole: {
-    fontSize: 9,
-    color: 'var(--text-dim)',
-    letterSpacing: 1.5,
+  slotRole: (isHost, isBot) => ({
+    fontSize: 10,
+    color: isHost ? 'var(--amber)' : (isBot ? 'var(--text-dim)' : '#6ee7a0'),
+    letterSpacing: 0.3,
     marginTop: 2,
-  },
+  }),
   emptySlot: {
     flex: 1,
     display: 'flex',
