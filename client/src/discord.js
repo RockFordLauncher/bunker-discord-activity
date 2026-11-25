@@ -19,20 +19,23 @@ export async function setupDiscord() {
       scope: ["identify", "guilds"],
     });
 
-    const tokenRes = await fetch('/api/token', {
+    const tokenRes = await fetch('https://bunker-discord-activity.onrender.com/api/token', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ code }),
-    });
+    }).catch(() => fetch('/api/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code }),
+    }));
 
-    if (tokenRes.ok) {
+    if (tokenRes && tokenRes.ok) {
       const { access_token } = await tokenRes.json();
-      await discordSdk.commands.authenticate({ access_token });
-
-      const userRes = await fetch('https://discord.com/api/users/@me', {
+      const auth = await discordSdk.commands.authenticate({ access_token });
+      const user = auth?.user || await (await fetch('https://discord.com/api/users/@me', {
         headers: { Authorization: `Bearer ${access_token}` },
-      });
-      const user = await userRes.json();
+      })).json();
+
       return {
         ready: true,
         user: {
@@ -44,6 +47,9 @@ export async function setupDiscord() {
             : null,
         },
       };
+    } else {
+      const errBody = tokenRes ? await tokenRes.text() : 'No response';
+      console.error('[Discord] Token exchange failed:', tokenRes?.status, errBody);
     }
     return { ready: true, user: null };
   } catch (e) {
