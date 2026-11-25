@@ -1228,10 +1228,13 @@ export class Bunker3DScene {
     avatarGroup.position.set(x, 0, z);
     avatarGroup.rotation.y = targetAngle;
 
-    // Attach floating 3D nametag above remote player avatars
+    // Attach floating 3D nametag cleanly above each character's actual head height
     if (!isLocal) {
-      const nametag = this.createNametagSprite(player.username || (player.isBot ? 'БОТ' : 'ОПЕРАТОР'), player.isHost);
-      nametag.position.set(0, 1.48, 0);
+      avatarGroup.updateMatrixWorld(true);
+      const bbox = new THREE.Box3().setFromObject(avatarGroup);
+      const topY = isFinite(bbox.max.y) ? bbox.max.y : 1.48;
+      const nametag = this.createNametagSprite(player.username || (player.isBot ? 'БОТ' : 'ИГРОК'), player.isHost);
+      nametag.position.set(0, Math.max(1.38, topY + 0.14), 0);
       avatarGroup.add(nametag);
       avatarGroup.userData.nametag = nametag;
     }
@@ -1463,11 +1466,11 @@ export class Bunker3DScene {
 
       const mesh = new THREE.Mesh(cardGeo, cardMats);
 
-      // Centered symmetric fan in player's hands, just below straight-ahead eye level (world space)
+      // Centered symmetric fan in player's hands, cleanly above fingers so hands hold bottom corners without clipping
       const x = -totalWidth / 2 + i * cardStep;
       const archY = -Math.pow(x / 0.35, 2) * 0.018;
-      const y = 0.93 + archY;
-      const z = -0.48;
+      const y = 0.99 + archY;
+      const z = -0.45;
       const rotZ = -x * 0.42;
 
       mesh.position.set(x, y, z);
@@ -1935,17 +1938,6 @@ export class Bunker3DScene {
           prop.tableStackGroup.scale.set(stackScale, stackScale, stackScale);
           prop.tableStackGroup.position.y = prop.baseStackPos.y - w * 0.025;
         }
-
-        // Animate 3D In-Hand Fan (visible for remote players when holdWeight > 0, follows torso turn)
-        if (prop.inHandFanGroup && !prop.isLocal) {
-          const fanScale = Math.max(0.001, w);
-          prop.inHandFanGroup.visible = fanScale > 0.02;
-          prop.inHandFanGroup.scale.set(fanScale, fanScale, fanScale);
-          prop.inHandFanGroup.position.y = prop.baseHandPos.y + Math.sin(time * 1.85 + idx * 2.17) * 0.004;
-          const netRot = this.playerHeadRotations?.get(prop.playerId);
-          const torsoYaw = netRot ? netRot.yaw * 0.35 : 0;
-          prop.inHandFanGroup.rotation.y = (prop.baseHandRotY ?? prop.inHandFanGroup.userData.baseRotY ?? 0) + torsoYaw;
-        }
       });
     }
 
@@ -2029,25 +2021,29 @@ export class Bunker3DScene {
       // Arms & Forearms: idle gestures, speaking gestures, and clear card-holding lift vs table-stack placement
       const gestureL = Math.sin(time * (1.1 + style * 0.2) + phase) * (0.025 + speakW * 0.06);
       const gestureR = Math.cos(time * (0.95 + style * 0.2) + phase) * (0.025 + speakW * 0.07);
+      const armLift = ud.isLocal ? 0.14 : 0.44;
+      const armInward = ud.isLocal ? 0.04 : 0.22;
+      const forearmLift = ud.isLocal ? 0.16 : 0.48;
+      const forearmInward = ud.isLocal ? 0.04 : 0.18;
 
       if (ud.leftArm && base.leftArm) {
-        ud.leftArm.rotation.x = base.leftArm.rot.x + breath * 0.015 + holdW * 0.44 + gestureL * (1 - holdW * 0.65);
-        ud.leftArm.rotation.y = base.leftArm.rot.y - holdW * 0.22;
+        ud.leftArm.rotation.x = base.leftArm.rot.x + breath * 0.015 + holdW * armLift + gestureL * (1 - holdW * 0.65);
+        ud.leftArm.rotation.y = base.leftArm.rot.y - holdW * armInward;
         ud.leftArm.rotation.z = base.leftArm.rot.z + breath * 0.018;
       }
       if (ud.rightArm && base.rightArm) {
-        ud.rightArm.rotation.x = base.rightArm.rot.x + breath * 0.015 + holdW * 0.44 + gestureR * (1 - holdW * 0.65);
-        ud.rightArm.rotation.y = base.rightArm.rot.y + holdW * 0.22;
+        ud.rightArm.rotation.x = base.rightArm.rot.x + breath * 0.015 + holdW * armLift + gestureR * (1 - holdW * 0.65);
+        ud.rightArm.rotation.y = base.rightArm.rot.y + holdW * armInward;
         ud.rightArm.rotation.z = base.rightArm.rot.z - breath * 0.018;
       }
 
       if (ud.lForearm && base.leftForearm) {
-        ud.lForearm.rotation.x = base.leftForearm.rot.x + holdW * 0.48 + gestureL * 0.8;
-        ud.lForearm.rotation.y = base.leftForearm.rot.y - holdW * 0.18 + Math.cos(time * 0.7 + phase) * 0.02;
+        ud.lForearm.rotation.x = base.leftForearm.rot.x + holdW * forearmLift + gestureL * 0.8;
+        ud.lForearm.rotation.y = base.leftForearm.rot.y - holdW * forearmInward + Math.cos(time * 0.7 + phase) * 0.02;
       }
       if (ud.rForearm && base.rightForearm) {
-        ud.rForearm.rotation.x = base.rightForearm.rot.x + holdW * 0.48 + gestureR * 0.8;
-        ud.rForearm.rotation.y = base.rightForearm.rot.y + holdW * 0.18 + Math.sin(time * 0.8 + phase) * 0.02;
+        ud.rForearm.rotation.x = base.rightForearm.rot.x + holdW * forearmLift + gestureR * 0.8;
+        ud.rForearm.rotation.y = base.rightForearm.rot.y + holdW * forearmInward + Math.sin(time * 0.8 + phase) * 0.02;
       }
 
       // Headset mic blinking diode (green glow pulsing)
@@ -2055,6 +2051,68 @@ export class Bunker3DScene {
         ud.diode.material.color.setHex((Math.sin(time * 3 + i) > 0.2) ? 0x33ff66 : 0x007722);
       }
     });
+
+    // 4b. Anchor each remote player's 3D card fan directly between their actual animated palms
+    if (this.playerCardProps && this.playerCardProps.length > 0) {
+      const computeHandLocalAnchor = (armNode) => {
+        if (!armNode) return new THREE.Vector3(0, -4, 0);
+        armNode.updateWorldMatrix(true, true);
+        const invArm = new THREE.Matrix4().copy(armNode.matrixWorld).invert();
+        const box = new THREE.Box3();
+        const tempBox = new THREE.Box3();
+        armNode.traverse((child) => {
+          if (child.isMesh && child.geometry) {
+            if (!child.geometry.boundingBox) child.geometry.computeBoundingBox();
+            tempBox.copy(child.geometry.boundingBox);
+            tempBox.applyMatrix4(child.matrixWorld).applyMatrix4(invArm);
+            box.union(tempBox);
+          }
+        });
+        if (box.isEmpty()) return new THREE.Vector3(0, -4, 0);
+        const cx = (box.min.x + box.max.x) * 0.5;
+        const cz = (box.min.z + box.max.z) * 0.5;
+        const py = box.min.y + Math.min(1.5, (box.max.y - box.min.y) * 0.14);
+        return new THREE.Vector3(cx, py, cz);
+      };
+
+      this.playerCardProps.forEach((prop, idx) => {
+        if (!prop.inHandFanGroup || prop.isLocal) return;
+        const w = prop.holdWeight;
+        const fanScale = Math.max(0.001, w);
+        prop.inHandFanGroup.visible = fanScale > 0.02;
+        prop.inHandFanGroup.scale.set(fanScale, fanScale, fanScale);
+        if (!prop.inHandFanGroup.visible) return;
+
+        const av = prop.avatar;
+        const ud = av?.userData;
+        if (ud && (ud.lForearm || ud.leftArm) && (ud.rForearm || ud.rightArm)) {
+          const lNode = ud.lForearm || ud.leftArm;
+          const rNode = ud.rForearm || ud.rightArm;
+          if (!ud.handAnchorL) ud.handAnchorL = computeHandLocalAnchor(lNode);
+          if (!ud.handAnchorR) ud.handAnchorR = computeHandLocalAnchor(rNode);
+
+          av.updateMatrixWorld(true);
+          const vL = this._tmpVecL || (this._tmpVecL = new THREE.Vector3());
+          const vR = this._tmpVecR || (this._tmpVecR = new THREE.Vector3());
+          vL.copy(ud.handAnchorL);
+          vR.copy(ud.handAnchorR);
+          lNode.localToWorld(vL);
+          rNode.localToWorld(vR);
+
+          prop.inHandFanGroup.position.set(
+            (vL.x + vR.x) * 0.5,
+            (vL.y + vR.y) * 0.5 + 0.045,
+            (vL.z + vR.z) * 0.5
+          );
+        } else {
+          prop.inHandFanGroup.position.y = prop.baseHandPos.y + Math.sin(time * 1.85 + idx * 2.17) * 0.004;
+        }
+
+        const netRot = this.playerHeadRotations?.get(prop.playerId);
+        const torsoYaw = netRot ? netRot.yaw * 0.35 : 0;
+        prop.inHandFanGroup.rotation.y = (prop.baseHandRotY ?? prop.inHandFanGroup.userData.baseRotY ?? 0) + torsoYaw;
+      });
+    }
 
     // 5. Spin RobCo Mainframe Magnetic Tape Reels
     if (this.tapeReels && this.tapeReels.length > 0) {
