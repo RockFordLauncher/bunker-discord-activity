@@ -41,10 +41,15 @@ export default function App() {
   // Try Discord SDK on mount
   useEffect(() => {
     setupDiscord().then(result => {
-      if (result.user) {
-        setGameState(prev => ({ ...prev, discordUser: result.user }));
+      if (result && result.user) {
+        console.log('[Discord] User authenticated:', result.user);
+        setGameState(prev => ({
+          ...prev,
+          discordUser: result.user,
+          players: prev.players.map(p => (p.id === prev.myId ? { ...p, username: result.user.username, avatarUrl: result.user.avatarUrl } : p)),
+        }));
       }
-    });
+    }).catch(err => console.error('[Discord] setupDiscord error:', err));
   }, []);
 
   useEffect(() => {

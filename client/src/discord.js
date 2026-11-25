@@ -11,6 +11,7 @@ export async function setupDiscord() {
     discordSdk = new DiscordSDK(CLIENT_ID);
     await discordSdk.ready();
 
+    // 1. Authorize with Discord Client
     const { code } = await discordSdk.commands.authorize({
       client_id: CLIENT_ID,
       response_type: "code",
@@ -19,11 +20,12 @@ export async function setupDiscord() {
       scope: ["identify", "guilds"],
     });
 
-    const tokenRes = await fetch('https://bunker-discord-activity.onrender.com/api/token', {
+    // 2. Exchange authorization code for access token via backend API
+    const tokenRes = await fetch('/api/token', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ code }),
-    }).catch(() => fetch('/api/token', {
+    }).catch(() => fetch('https://bunker-discord-activity.onrender.com/api/token', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ code }),
@@ -31,6 +33,7 @@ export async function setupDiscord() {
 
     if (tokenRes && tokenRes.ok) {
       const { access_token } = await tokenRes.json();
+      // 3. Authenticate SDK session
       const auth = await discordSdk.commands.authenticate({ access_token });
       const user = auth?.user || await (await fetch('https://discord.com/api/users/@me', {
         headers: { Authorization: `Bearer ${access_token}` },
@@ -50,10 +53,10 @@ export async function setupDiscord() {
     } else {
       const errBody = tokenRes ? await tokenRes.text() : 'No response';
       console.error('[Discord] Token exchange failed:', tokenRes?.status, errBody);
+      return { ready: true, user: null, error: errBody };
     }
-    return { ready: true, user: null };
   } catch (e) {
     console.warn('[Discord] Not in Discord iframe or auth failed:', e.message);
-    return { ready: false, user: null };
+    return { ready: false, user: null, error: e.message };
   }
 }
