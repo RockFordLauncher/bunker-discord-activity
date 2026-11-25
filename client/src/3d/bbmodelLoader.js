@@ -509,18 +509,19 @@ function findHumanoidBones(root) {
   root.traverse(node => {
     if (!node.isGroup) return;
     const name = (node.name || '').toLowerCase();
+    if (/buckle|strap|pivot|rivet|badge|crest|button|lace/.test(name)) return;
 
     if (!bones.head && (/head/i.test(name) || /skull/i.test(name) || /face/i.test(name))) {
       bones.head = node;
     } else if (!bones.torso && (/torso/i.test(name) || /body/i.test(name) || /chest/i.test(name) || /spine/i.test(name))) {
       bones.torso = node;
-    } else if (!bones.leftArm && (/left.*arm/i.test(name) || /arm.*left/i.test(name) || /^l.*arm/i.test(name) || /l_arm/i.test(name))) {
+    } else if (!bones.leftArm && (/(^|[_\s-])(left|l)[_\s-]*arm($|[_\s-])/i.test(name) || /(^|[_\s-])arm[_\s-]*(left|l)($|[_\s-])/i.test(name))) {
       bones.leftArm = node;
-    } else if (!bones.rightArm && (/right.*arm/i.test(name) || /arm.*right/i.test(name) || /^r.*arm/i.test(name) || /r_arm/i.test(name))) {
+    } else if (!bones.rightArm && (/(^|[_\s-])(right|r)[_\s-]*arm($|[_\s-])/i.test(name) || /(^|[_\s-])arm[_\s-]*(right|r)($|[_\s-])/i.test(name))) {
       bones.rightArm = node;
-    } else if (!bones.leftLeg && (/left.*leg/i.test(name) || /leg.*left/i.test(name) || /^l.*leg/i.test(name) || /l_leg/i.test(name))) {
+    } else if (!bones.leftLeg && (/(^|[_\s-])(left|l)[_\s-]*leg($|[_\s-])/i.test(name) || /(^|[_\s-])leg[_\s-]*(left|l)($|[_\s-])/i.test(name))) {
       bones.leftLeg = node;
-    } else if (!bones.rightLeg && (/right.*leg/i.test(name) || /leg.*right/i.test(name) || /^r.*leg/i.test(name) || /r_leg/i.test(name))) {
+    } else if (!bones.rightLeg && (/(^|[_\s-])(right|r)[_\s-]*leg($|[_\s-])/i.test(name) || /(^|[_\s-])leg[_\s-]*(right|r)($|[_\s-])/i.test(name))) {
       bones.rightLeg = node;
     } else if (!bones.leftForearm && (/left.*forearm/i.test(name) || /l.*forearm/i.test(name) || /left.*hand/i.test(name) || /l.*hand/i.test(name))) {
       bones.leftForearm = node;
@@ -719,6 +720,17 @@ function applySeatedPose(root, bones, elements) {
       child.position.z -= 1.6;
     }
   });
+
+  // 6. Parent arms under torso so upper body & shoulders rotate together seamlessly (no detached arms!)
+  if (bones.torso) {
+    root.updateMatrixWorld(true);
+    if (bones.leftArm && !isDescendantOf(bones.leftArm, bones.torso)) {
+      bones.torso.attach(bones.leftArm);
+    }
+    if (bones.rightArm && !isDescendantOf(bones.rightArm, bones.torso)) {
+      bones.torso.attach(bones.rightArm);
+    }
+  }
 }
 
 /**

@@ -89,6 +89,12 @@ export class Bunker3DScene {
     this.chairMeshes = [];
     this.tableCards = []; // revealed cards on table
     this.handCards = []; // local player's cards in hand
+    this.handGroup = new THREE.Group(); // seated player's hand-level anchor (world space, not glued to head)
+    this.handGroup.position.set(0, 0, 2.1);
+    this.handGroup.userData.baseRotY = 0;
+    this.handGroup.scale.setScalar(0.001);
+    this.handGroup.visible = false;
+    this.scene.add(this.handGroup);
     this.playerCardPoses = new Map(); // playerId -> boolean (cardsRaised)
     this.playerCardProps = []; // per-player 3D in-hand fan & table stack
     this.currentTurnPlayerId = null;
@@ -916,6 +922,14 @@ export class Bunker3DScene {
         this.camera.lookAt(0, 0.75, 0);
         this.initialCameraLook = new THREE.Vector3(0, 0.75, 0);
 
+        // Anchor handGroup to local player's seat facing the table (-Z toward center, +Z toward player)
+        if (this.handGroup) {
+          this.handGroup.position.set(px, 0, pz);
+          const handBaseRotY = Math.atan2(px, pz);
+          this.handGroup.rotation.y = handBaseRotY;
+          this.handGroup.userData.baseRotY = handBaseRotY;
+        }
+
         // Render local player's own 3D avatar seated at their chair in First-Person Mode
         // (head/neck hidden so torso, arms, hands, and legs are visible when looking down)
         if (players[i] && !players[i].eliminated) {
@@ -1168,7 +1182,7 @@ export class Bunker3DScene {
 
     const avatarGroup = buildCharacterModel(cust, {
       mode: 'seated',
-      cardBackTex: this.cardBackTex,
+      cardBackTex: isLocal ? null : this.cardBackTex,
     });
 
     avatarGroup.userData.player = player;
@@ -1270,7 +1284,7 @@ export class Bunker3DScene {
     // Eliminated spectator has NO cards in hand!
     if (isEliminated) {
       this.handCards.forEach(c => {
-        this.camera.remove(c);
+        this.handGroup.remove(c);
         if (c.geometry) c.geometry.dispose();
         if (Array.isArray(c.material)) {
           c.material.forEach(m => {
@@ -1291,7 +1305,7 @@ export class Bunker3DScene {
 
     if (count === 0) {
       this.handCards.forEach(c => {
-        this.camera.remove(c);
+        this.handGroup.remove(c);
         if (c.geometry) c.geometry.dispose();
         if (Array.isArray(c.material)) {
           c.material.forEach(m => {
@@ -1343,9 +1357,9 @@ export class Bunker3DScene {
     const prevHoveredType = this.hoveredHandCard?.userData?.type;
     const prevSelectedType = this.selectedHandCard?.userData?.type;
 
-    // Remove old hand cards from camera
+    // Remove old hand cards from handGroup
     this.handCards.forEach(c => {
-      this.camera.remove(c);
+      this.handGroup.remove(c);
       if (c.geometry) c.geometry.dispose();
       if (Array.isArray(c.material)) {
         c.material.forEach(m => {
@@ -1357,8 +1371,8 @@ export class Bunker3DScene {
     this.handCards = [];
 
     // Centered symmetric fan calculation
-    const maxSpread = 0.52;
-    const cardStep = count > 1 ? Math.min(0.08, maxSpread / (count - 1)) : 0;
+    const maxSpread = 0.44;
+    const cardStep = count > 1 ? Math.min(0.068, maxSpread / (count - 1)) : 0;
     const totalWidth = (count - 1) * cardStep;
 
     activeTypes.forEach((type, i) => {
@@ -1368,7 +1382,7 @@ export class Bunker3DScene {
       const icon = CARD_ICONS[type] || '🃏';
 
       const frontTex = createCardFrontTexture(type, text, icon, desc);
-      const cardGeo = new THREE.BoxGeometry(0.14, 0.20, 0.004);
+      const cardGeo = new THREE.BoxGeometry(0.115, 0.165, 0.004);
       const cardMats = [
         new THREE.MeshBasicMaterial({ color: 0x222 }),
         new THREE.MeshBasicMaterial({ color: 0x222 }),
@@ -1380,15 +1394,15 @@ export class Bunker3DScene {
 
       const mesh = new THREE.Mesh(cardGeo, cardMats);
 
-      // Centered symmetric fan at comfortable lower chest / table-edge reading position (not blocking face)
+      // Centered symmetric fan in player's hands, just below straight-ahead eye level (world space)
       const x = -totalWidth / 2 + i * cardStep;
-      const archY = -Math.pow(x / 0.35, 2) * 0.022;
-      const y = -0.22 + archY;
-      const z = -0.44;
+      const archY = -Math.pow(x / 0.35, 2) * 0.018;
+      const y = 0.93 + archY;
+      const z = -0.48;
       const rotZ = -x * 0.42;
 
       mesh.position.set(x, y, z);
-      mesh.rotation.set(-0.32, 0, rotZ);
+      mesh.rotation.set(-0.42, 0, rotZ);
 
       mesh.userData = {
         type,
@@ -1396,11 +1410,11 @@ export class Bunker3DScene {
         description: desc,
         cardData,
         basePos: new THREE.Vector3(x, y, z),
-        baseRot: new THREE.Vector3(-0.32, 0, rotZ),
+        baseRot: new THREE.Vector3(-0.42, 0, rotZ),
         isHandCard: true,
       };
 
-      this.camera.add(mesh);
+      this.handGroup.add(mesh);
       this.handCards.push(mesh);
     });
 
@@ -1710,14 +1724,24 @@ export class Bunker3DScene {
       }
     }
 
-    // 3. Hand Cards Elevation & Hover (Lowered down to table stack by default until Space is pressed!)
+    // 3. Hand Cards Elevation & Hover (Hidden when lowered so only the table stack shows; smoothly raised into hands on Space)
+    const targetHandScale = this.cardsRaised ? 1 : 0.001;
+    if (this.handGroup) {
+      const curScale = this.handGroup.scale.x + (targetHandScale - this.handGroup.scale.x) * 0.22;
+      this.handGroup.scale.setScalar(curScale);
+      this.handGroup.visible = curScale > 0.03;
+      const baseHandRotY = this.handGroup.userData.baseRotY ?? 0;
+      this.handGroup.rotation.y = baseHandRotY + this.currentYaw * 0.35;
+    }
     this.handCards.forEach(c => {
       const isSelectedOrHovered = this.cardsRaised && (this.hoveredHandCard === c || this.selectedHandCard === c);
-      const raisedOffset = this.cardsRaised ? 0 : -0.46;
-      const hoverOffset = isSelectedOrHovered ? 0.045 : 0;
-      const targetY = c.userData.basePos.y + raisedOffset + hoverOffset;
-      const targetZ = isSelectedOrHovered ? c.userData.basePos.z + 0.035 : c.userData.basePos.z;
-      const targetRotX = isSelectedOrHovered ? -0.14 : (this.cardsRaised ? c.userData.baseRot.x : -0.85);
+      const raisedOffsetY = this.cardsRaised ? 0 : -0.125;
+      const raisedOffsetZ = this.cardsRaised ? 0 : -0.08;
+      const hoverOffsetY = isSelectedOrHovered ? 0.04 : 0;
+      const hoverOffsetZ = isSelectedOrHovered ? 0.03 : 0;
+      const targetY = c.userData.basePos.y + raisedOffsetY + hoverOffsetY;
+      const targetZ = c.userData.basePos.z + raisedOffsetZ + hoverOffsetZ;
+      const targetRotX = isSelectedOrHovered ? -0.25 : (this.cardsRaised ? c.userData.baseRot.x : -1.45);
 
       c.position.y += (targetY - c.position.y) * 0.22;
       c.position.z += (targetZ - c.position.z) * 0.22;
@@ -1744,7 +1768,7 @@ export class Bunker3DScene {
         prop.holdWeight += (targetHold - prop.holdWeight) * 0.14;
         const w = prop.holdWeight;
 
-        // Animate 3D Table Stack (neatly resting on table when holdWeight -> 0)
+        // Animate 3D Table Stack (neatly resting on table when holdWeight -> 0, hidden when player raises cards)
         if (prop.tableStackGroup) {
           const stackScale = Math.max(0.001, 1 - w);
           prop.tableStackGroup.visible = stackScale > 0.02;
@@ -1795,16 +1819,16 @@ export class Bunker3DScene {
       const cardProp = playerId ? propByPlayerId.get(playerId) : null;
       const holdW = cardProp ? cardProp.holdWeight : (ud.isLocal && this.cardsRaised ? 1 : 0);
 
-      // Torso: breathing + weight shift + speaking lean (or FP head-look follow-through for local player)
+      // Torso: breathing + weight shift + speaking lean (keep torso & shoulders aligned so arms never detach in FP)
       if (ud.torso && base.torso) {
         ud.torso.scale.z = base.torso.scale.z * (1 + breath * 0.032);
         ud.torso.scale.y = base.torso.scale.y * (1 + breath * 0.014);
 
         if (ud.isLocal) {
           const fpPitchLean = Math.max(-0.12, Math.min(0.22, -this.currentPitch * 0.22));
-          ud.torso.rotation.y = base.torso.rot.y + this.currentYaw * 0.38 + sway * 0.015;
-          ud.torso.rotation.x = base.torso.rot.x + fpPitchLean + breath * 0.012 + speakW * 0.06;
-          ud.torso.rotation.z = base.torso.rot.z - this.currentYaw * 0.06 + sway * 0.012;
+          ud.torso.rotation.y = base.torso.rot.y + this.currentYaw * 0.35 + sway * 0.012;
+          ud.torso.rotation.x = base.torso.rot.x + fpPitchLean + breath * 0.012 + speakW * 0.05;
+          ud.torso.rotation.z = base.torso.rot.z - this.currentYaw * 0.05 + sway * 0.010;
         } else {
           ud.torso.rotation.x = base.torso.rot.x + breath * 0.014 + speakW * 0.12;
           ud.torso.rotation.y = base.torso.rot.y + Math.sin(time * 0.38 + phase) * 0.035;
@@ -1826,15 +1850,13 @@ export class Bunker3DScene {
       const gestureR = Math.cos(time * (0.95 + style * 0.2) + phase) * (0.025 + speakW * 0.07);
 
       if (ud.leftArm && base.leftArm) {
-        const fpArmFollowY = ud.isLocal ? this.currentYaw * 0.14 : 0;
         ud.leftArm.rotation.x = base.leftArm.rot.x + breath * 0.015 + holdW * 0.28 + gestureL * (1 - holdW * 0.6);
-        ud.leftArm.rotation.y = base.leftArm.rot.y - holdW * 0.16 + fpArmFollowY;
+        ud.leftArm.rotation.y = base.leftArm.rot.y - holdW * 0.16;
         ud.leftArm.rotation.z = base.leftArm.rot.z + breath * 0.018;
       }
       if (ud.rightArm && base.rightArm) {
-        const fpArmFollowY = ud.isLocal ? this.currentYaw * 0.14 : 0;
         ud.rightArm.rotation.x = base.rightArm.rot.x + breath * 0.015 + holdW * 0.28 + gestureR * (1 - holdW * 0.6);
-        ud.rightArm.rotation.y = base.rightArm.rot.y + holdW * 0.16 + fpArmFollowY;
+        ud.rightArm.rotation.y = base.rightArm.rot.y + holdW * 0.16;
         ud.rightArm.rotation.z = base.rightArm.rot.z - breath * 0.018;
       }
 
