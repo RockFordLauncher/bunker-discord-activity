@@ -968,6 +968,15 @@ export class Bunker3DScene {
     this.playerCardPoses.set(playerId, Boolean(cardsRaised));
   }
 
+  setPlayerHeadRotation(playerId, yaw, pitch) {
+    if (!playerId) return;
+    if (!this.playerHeadRotations) this.playerHeadRotations = new Map();
+    this.playerHeadRotations.set(playerId, {
+      yaw: Number(yaw) || 0,
+      pitch: Number(pitch) || 0,
+    });
+  }
+
   syncPlayerCardProps(players, myId) {
     // Clean up old per-player 3D card fans & table stacks
     if (this.playerCardProps && this.playerCardProps.length > 0) {
@@ -1206,7 +1215,52 @@ export class Bunker3DScene {
     avatarGroup.position.set(x, 0, z);
     avatarGroup.rotation.y = targetAngle;
 
+    // Attach floating 3D nametag above remote player avatars
+    if (!isLocal) {
+      const nametag = this.createNametagSprite(player.username || (player.isBot ? 'БОТ' : 'ОПЕРАТОР'), player.isHost);
+      nametag.position.set(0, 1.48, 0);
+      avatarGroup.add(nametag);
+      avatarGroup.userData.nametag = nametag;
+    }
+
     return avatarGroup;
+  }
+
+  createNametagSprite(username, isHost = false) {
+    const canvas = document.createElement('canvas');
+    canvas.width = 512;
+    canvas.height = 128;
+    const ctx = canvas.getContext('2d');
+
+    // Dark sleek semi-transparent pill badge
+    ctx.fillStyle = 'rgba(10, 14, 20, 0.85)';
+    ctx.roundRect ? ctx.roundRect(16, 20, 480, 88, 20) : ctx.fillRect(16, 20, 480, 88);
+    ctx.fill();
+
+    // Border
+    ctx.lineWidth = 4;
+    ctx.strokeStyle = isHost ? 'rgba(235, 172, 39, 0.9)' : 'rgba(90, 180, 255, 0.65)';
+    if (ctx.roundRect) ctx.roundRect(16, 20, 480, 88, 20);
+    ctx.stroke();
+
+    // Text
+    ctx.font = 'bold 44px monospace, "Courier New", sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = isHost ? '#ffcc44' : '#e0eef8';
+    const cleanName = (username.length > 15 ? username.slice(0, 14) + '…' : username).toUpperCase();
+    ctx.fillText((isHost ? '★ ' : '') + cleanName, 256, 64);
+
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.minFilter = THREE.LinearFilter;
+    const spriteMat = new THREE.SpriteMaterial({
+      map: texture,
+      transparent: true,
+      depthTest: false,
+    });
+    const sprite = new THREE.Sprite(spriteMat);
+    sprite.scale.set(0.65, 0.16, 1.0);
+    return sprite;
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -1619,6 +1673,14 @@ export class Bunker3DScene {
 
         this.targetYaw = Math.max(-2.0, Math.min(2.0, this.targetYaw));
         this.targetPitch = Math.max(-0.8, Math.min(0.55, this.targetPitch));
+
+        if (this.onHeadMove) {
+          const now = performance.now();
+          if (!this._lastHeadSync || now - this._lastHeadSync > 50) {
+            this._lastHeadSync = now;
+            this.onHeadMove(this.targetYaw, this.targetPitch);
+          }
+        }
       } else {
         this.previousMousePosition = { x: e.clientX, y: e.clientY };
       }
@@ -1919,13 +1981,21 @@ export class Bunker3DScene {
         }
       }
 
-      // Head: natural glances at other players and table (skipped for local FP avatar)
+      // Head: real-time synchronized rotation from remote players, or natural glances for bots
       if (ud.head && base.head && !ud.isLocal) {
-        const glanceYaw = Math.sin(time * 0.42 + phase) * 0.24 + Math.sin(time * 0.95 + phase * 2) * 0.08;
-        const glancePitch = -0.05 + Math.sin(time * 0.65 + phase) * 0.06 + holdW * 0.14;
-        ud.head.rotation.y = base.head.rot.y + glanceYaw;
-        ud.head.rotation.x = base.head.rot.x + glancePitch;
-        ud.head.rotation.z = base.head.rot.z + Math.sin(time * 0.5 + phase) * 0.03;
+        const netRot = this.playerHeadRotations?.get(playerId);
+        if (netRot) {
+          // Player's actual head rotation looking around the room!
+          ud.head.rotation.y = base.head.rot.y - netRot.yaw;
+          ud.head.rotation.x = base.head.rot.x + netRot.pitch;
+          ud.head.rotation.z = base.head.rot.z;
+        } else {
+          const glanceYaw = Math.sin(time * 0.42 + phase) * 0.24 + Math.sin(time * 0.95 + phase * 2) * 0.08;
+          const glancePitch = -0.05 + Math.sin(time * 0.65 + phase) * 0.06 + holdW * 0.14;
+          ud.head.rotation.y = base.head.rot.y + glanceYaw;
+          ud.head.rotation.x = base.head.rot.x + glancePitch;
+          ud.head.rotation.z = base.head.rot.z + Math.sin(time * 0.5 + phase) * 0.03;
+        }
       }
 
       // Arms & Forearms: idle gestures, speaking gestures, and card-holding vs table-stack placement

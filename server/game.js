@@ -164,7 +164,7 @@ export class BunkerGame {
     return { roomCode, animeName };
   }
 
-  joinRoom(roomCode, socketId, username, isBot = false, customization = null) {
+  joinRoom(roomCode, socketId, username, isBot = false, customization = null, avatarUrl = null) {
     const room = this._getRoom(roomCode);
 
     if (room.phase !== GAME_PHASES.LOBBY) {
@@ -174,6 +174,7 @@ export class BunkerGame {
     const player = {
       id: socketId,
       username,
+      avatarUrl: avatarUrl || null,
       connected: true,
       joinedAt: Date.now(),
       isBot: isBot || false,
@@ -695,6 +696,7 @@ export class BunkerGame {
       return {
         id: p.id,
         username: p.username,
+        avatarUrl: p.avatarUrl || null,
         connected: p.connected,
         eliminated: p.eliminated || false,
         isHost: p.id === room.hostId,

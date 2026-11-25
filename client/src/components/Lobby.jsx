@@ -88,6 +88,7 @@ export default function Lobby({ gameState, setGameState }) {
     setGameState(prev => ({ ...prev, bunkerTheme }));
     socket.emit('create_room', {
       username: name,
+      avatarUrl,
       packId: selectedPack,
       testMode,
       customization,
@@ -111,6 +112,7 @@ export default function Lobby({ gameState, setGameState }) {
     socket.emit('join_room', {
       roomCode: joinCode.trim().toUpperCase(),
       username: name,
+      avatarUrl,
       customization,
     });
     setTimeout(() => setLoading(false), 3000);

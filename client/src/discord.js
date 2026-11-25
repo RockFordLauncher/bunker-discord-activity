@@ -7,7 +7,7 @@ export let discordSdk = null;
 export async function setupDiscord() {
   try {
     const { DiscordSDK } = await import("@discord/embedded-app-sdk");
-    const CLIENT_ID = import.meta.env.VITE_CLIENT_ID || "placeholder_id";
+    const CLIENT_ID = import.meta.env.VITE_CLIENT_ID || "1574931331341750383";
     discordSdk = new DiscordSDK(CLIENT_ID);
     await discordSdk.ready();
 

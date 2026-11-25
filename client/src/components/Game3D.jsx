@@ -165,6 +165,9 @@ export default function Game3D({ gameState, setGameState, onToggle2D }) {
         setCardsRaised(raised);
         socket.emit('player_cards_pose', { cardsRaised: raised });
       },
+      onHeadMove: (yaw, pitch) => {
+        socket.emit('head_rotation', { yaw, pitch });
+      },
       onTerminalClick: () => {
         bunkerAudio.playTerminalBeep();
         setTerminalOpen(true);
@@ -266,16 +269,24 @@ export default function Game3D({ gameState, setGameState, onToggle2D }) {
       }
     };
 
+    const handlePlayerHeadRotation = (data) => {
+      if (data && data.playerId && sceneRef.current && typeof sceneRef.current.setPlayerHeadRotation === 'function') {
+        sceneRef.current.setPlayerHeadRotation(data.playerId, data.yaw, data.pitch);
+      }
+    };
+
     socket.on('card_revealed', handleCardRevealed);
     socket.on('turn_advanced', handleTurnAdvanced);
     socket.on('round_advanced', handleRoundAdvanced);
     socket.on('player_cards_pose', handlePlayerCardsPose);
+    socket.on('head_rotation', handlePlayerHeadRotation);
 
     return () => {
       socket.off('card_revealed', handleCardRevealed);
       socket.off('turn_advanced', handleTurnAdvanced);
       socket.off('round_advanced', handleRoundAdvanced);
       socket.off('player_cards_pose', handlePlayerCardsPose);
+      socket.off('head_rotation', handlePlayerHeadRotation);
     };
   }, [players, myId]);
 

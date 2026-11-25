@@ -56,6 +56,48 @@ app.get('/health', (_req, res) => {
 const distPath = path.resolve(__dirname, '../client/dist');
 app.use(express.static(distPath));
 
+// Discord OAuth2 Token Exchange
+app.post('/api/token', async (req, res) => {
+  try {
+    const { code } = req.body;
+    if (!code) {
+      return res.status(400).json({ error: 'Missing code' });
+    }
+
+    const clientId = process.env.DISCORD_CLIENT_ID || '1574931331341750383';
+    const clientSecret = process.env.DISCORD_CLIENT_SECRET;
+
+    if (!clientSecret) {
+      console.warn('[/api/token] DISCORD_CLIENT_SECRET not configured in environment variables');
+      return res.status(500).json({ error: 'Server OAuth secret not set' });
+    }
+
+    const params = new URLSearchParams({
+      client_id: clientId,
+      client_secret: clientSecret,
+      grant_type: 'authorization_code',
+      code: code,
+    });
+
+    const discordRes = await fetch('https://discord.com/api/oauth2/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: params.toString(),
+    });
+
+    const data = await discordRes.json();
+    if (!discordRes.ok) {
+      console.error('[/api/token] Discord error:', data);
+      return res.status(discordRes.status).json(data);
+    }
+
+    res.json({ access_token: data.access_token });
+  } catch (err) {
+    console.error('[/api/token] Error exchanging token:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.get('/rooms/:code', (req, res) => {
   try {
     const state = game.getRoomState(req.params.code, null);
@@ -98,14 +140,14 @@ io.on('connection', (socket) => {
   // ─────────────────────────────────────────────────────────────────────────
   // create_room
   // ─────────────────────────────────────────────────────────────────────────
-  socket.on(SOCKET_EVENTS.CREATE_ROOM, ({ packId = 'base', packIds, username = 'Хост', testMode = false, customization = null } = {}, ack) => {
+  socket.on(SOCKET_EVENTS.CREATE_ROOM, ({ packId = 'base', packIds, username = 'Хост', avatarUrl = null, testMode = false, customization = null } = {}, ack) => {
     try {
       // Support both old packIds array and new packId string
       const finalPackId = packId || (packIds && packIds[0]) || 'base';
 
       const { roomCode, animeName } = game.createRoom(id, finalPackId, testMode);
       // Auto-join host as a player
-      game.joinRoom(roomCode, id, username, false, customization);
+      game.joinRoom(roomCode, id, username, false, customization, avatarUrl);
       rooms.socketRooms.set(id, roomCode);
       socket.join(roomCode);
 
@@ -135,11 +177,11 @@ io.on('connection', (socket) => {
   // ─────────────────────────────────────────────────────────────────────────
   // join_room
   // ─────────────────────────────────────────────────────────────────────────
-  socket.on(SOCKET_EVENTS.JOIN_ROOM, ({ roomCode, username, customization = null } = {}, ack) => {
+  socket.on(SOCKET_EVENTS.JOIN_ROOM, ({ roomCode, username, avatarUrl = null, customization = null } = {}, ack) => {
     try {
       if (!roomCode || !username) throw new Error('Нужны roomCode и username');
       const normalizedCode = roomCode.toUpperCase();
-      game.joinRoom(normalizedCode, id, username, false, customization);
+      game.joinRoom(normalizedCode, id, username, false, customization, avatarUrl);
       rooms.socketRooms.set(id, normalizedCode);
       socket.join(normalizedCode);
 
@@ -572,6 +614,23 @@ io.on('connection', (socket) => {
       socket.to(roomCode).emit('player_cards_pose', {
         playerId: id,
         cardsRaised: Boolean(cardsRaised),
+      });
+    } catch {
+      // Non-critical visual sync
+    }
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // head_rotation (broadcast look direction to other players)
+  // ─────────────────────────────────────────────────────────────────────────
+  socket.on('head_rotation', ({ yaw, pitch } = {}) => {
+    try {
+      const roomCode = rooms.getRoomCode(id);
+      if (!roomCode) return;
+      socket.to(roomCode).emit('head_rotation', {
+        playerId: id,
+        yaw: Number(yaw) || 0,
+        pitch: Number(pitch) || 0,
       });
     } catch {
       // Non-critical visual sync
