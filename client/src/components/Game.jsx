@@ -274,7 +274,7 @@ export default function Game({ gameState, setGameState }) {
       </div>
 
       {phase === 'voting' && (
-        <VotingPanel players={players} myId={myId} />
+        <VotingPanel players={players} myId={myId} isHost={isHost} />
       )}
     </div>
   );

@@ -55,41 +55,79 @@ function getPackCards(packId) {
   };
 }
 
-function dealCards(playerIds, packCards) {
+function shuffleArray(arr) {
+  const pool = [...arr];
+  for (let i = pool.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [pool[i], pool[j]] = [pool[j], pool[i]];
+  }
+  return pool;
+}
+
+function deduplicateCards(arr) {
+  if (!arr || arr.length === 0) return [];
+  const seen = new Set();
+  const unique = [];
+  for (const card of arr) {
+    if (!card) continue;
+    const key = card.text ?? card.id;
+    if (key !== undefined && seen.has(key)) continue;
+    if (key !== undefined) seen.add(key);
+    unique.push(card);
+  }
+  return unique;
+}
+
+const MAIN_TRAIT_SLOTS = [
+  { handKey: 'profession', packKey: 'professions' },
+  { handKey: 'health', packKey: 'health' },
+  { handKey: 'hobby', packKey: 'hobbies' },
+  { handKey: 'baggage', packKey: 'baggage' },
+  { handKey: 'fact', packKey: 'facts' },
+  { handKey: 'biology', packKey: 'biology' },
+];
+
+const MAX_GOOD_PER_PLAYER = 2; // At most 1/3 of 6 main traits
+
+export function dealCards(playerIds, packCards) {
   const hands = {};
 
-  function sampleUnique(arr, count) {
-    if (!arr || arr.length === 0) return [];
-    const pool = [...arr];
-    // Fisher-Yates shuffle
-    for (let i = pool.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [pool[i], pool[j]] = [pool[j], pool[i]];
+  // Build deduplicated, shuffled quality buckets for each of the 6 main trait categories
+  const categoryBuckets = {};
+  for (const { packKey } of MAIN_TRAIT_SLOTS) {
+    const uniquePool = shuffleArray(deduplicateCards(packCards[packKey]));
+    const buckets = { good: [], neutral: [], bad: [] };
+    for (const card of uniquePool) {
+      const q = card.quality === 'good' || card.quality === 'bad' ? card.quality : 'neutral';
+      buckets[q].push(card);
     }
-    const result = [];
-    for (let i = 0; i < count; i++) {
-      result.push(pool[i % pool.length]);
-    }
-    return result;
+    categoryBuckets[packKey] = buckets;
   }
 
-  const profs = sampleUnique(packCards.professions, playerIds.length);
-  const healths = sampleUnique(packCards.health, playerIds.length);
-  const hobbies = sampleUnique(packCards.hobbies, playerIds.length);
-  const bags = sampleUnique(packCards.baggage, playerIds.length);
-  const facts = sampleUnique(packCards.facts, playerIds.length);
-  const bios = sampleUnique(packCards.biology, playerIds.length);
-  const specials = sampleUnique(packCards.specials, playerIds.length);
+  // Deal unique specials without wrap-around
+  const uniqueSpecials = shuffleArray(deduplicateCards(packCards.specials));
 
   playerIds.forEach((playerId, index) => {
-    hands[playerId] = {
-      profession: profs[index] ? { ...profs[index] } : null,
-      health: healths[index] ? { ...healths[index] } : null,
-      hobby: hobbies[index] ? { ...hobbies[index] } : null,
-      baggage: bags[index] ? { ...bags[index] } : null,
-      fact: facts[index] ? { ...facts[index] } : null,
-      biology: bios[index] ? { ...bios[index] } : null,
-      special: specials[index] ? { ...specials[index] } : null,
+    // Target ~1-2 good (max 2 = 1/3 of 6), ~2 neutral, ~2-3 bad
+    const goodTarget = Math.random() < 0.5 ? 1 : 2;
+    const neutralTarget = 2;
+    const badTarget = 6 - goodTarget - neutralTarget; // 2 or 3
+
+    const desiredQualities = [
+      ...Array(goodTarget).fill('good'),
+      ...Array(neutralTarget).fill('neutral'),
+      ...Array(badTarget).fill('bad'),
+    ];
+    const shuffledSlots = shuffleArray(MAIN_TRAIT_SLOTS);
+
+    const hand = {
+      profession: null,
+      health: null,
+      hobby: null,
+      baggage: null,
+      fact: null,
+      biology: null,
+      special: uniqueSpecials[index] ? { ...uniqueSpecials[index] } : null,
       // Which cards are publicly revealed
       revealed: {
         profession: false,
@@ -101,6 +139,48 @@ function dealCards(playerIds, packCards) {
         special: false,
       },
     };
+
+    let playerGoodCount = 0;
+
+    shuffledSlots.forEach(({ handKey, packKey }, slotIdx) => {
+      const buckets = categoryBuckets[packKey];
+      const desired = desiredQualities[slotIdx];
+
+      let fallbackOrder;
+      if (desired === 'good') {
+        fallbackOrder = playerGoodCount < MAX_GOOD_PER_PLAYER
+          ? ['good', 'neutral', 'bad']
+          : ['neutral', 'bad', 'good'];
+      } else if (desired === 'neutral') {
+        fallbackOrder = playerGoodCount < MAX_GOOD_PER_PLAYER
+          ? ['neutral', 'bad', 'good']
+          : ['neutral', 'bad'];
+      } else {
+        fallbackOrder = playerGoodCount < MAX_GOOD_PER_PLAYER
+          ? ['bad', 'neutral', 'good']
+          : ['bad', 'neutral'];
+      }
+
+      let picked = null;
+      for (const q of fallbackOrder) {
+        if (buckets[q].length > 0) {
+          picked = buckets[q].pop();
+          break;
+        }
+      }
+
+      // Extreme fallback if a category only has 'good' cards left
+      if (!picked && buckets.good.length > 0) {
+        picked = buckets.good.pop();
+      }
+
+      if (picked) {
+        if (picked.quality === 'good') playerGoodCount++;
+        hand[handKey] = { ...picked };
+      }
+    });
+
+    hands[playerId] = hand;
   });
 
   return hands;
@@ -435,8 +515,8 @@ export class BunkerGame {
     room.votes = {};
     room.phantomVotes = {};
 
-    // If test mode, bots auto-vote
-    if (room.testMode) {
+    // If bots exist, bots auto-vote
+    if (room.bots && room.bots.length > 0) {
       this.botVote(roomCode);
     }
 
@@ -458,7 +538,7 @@ export class BunkerGame {
 
   endVoting(roomCode, requesterId) {
     const room = this._getRoom(roomCode);
-    if (room.hostId !== requesterId) throw new Error('Только хост может завершить голосование');
+    if (requesterId && room.hostId !== requesterId) throw new Error('Только хост может завершить голосование');
     if (room.phase !== GAME_PHASES.VOTING) throw new Error('Голосование не идёт');
 
     // Count votes

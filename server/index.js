@@ -122,27 +122,196 @@ app.get('/rooms/:code', (req, res) => {
 
 // ─── Socket.io ───────────────────────────────────────────────────────────────
 
+const votingTimers = new Map();
+
+function broadcastRoomState(roomCode) {
+  const roomData = game.rooms.get(roomCode);
+  if (!roomData) return;
+
+  for (const [playerId] of roomData.players) {
+    const player = roomData.players.get(playerId);
+    if (player?.isBot) continue;
+
+    const playerSocket = io.sockets.sockets.get(playerId);
+    if (playerSocket) {
+      const state = game.getRoomState(roomCode, playerId);
+      playerSocket.emit(SOCKET_EVENTS.ROOM_STATE, state);
+    }
+  }
+}
+
+function triggerVoting(roomCode, requesterId) {
+  try {
+    const room = game.rooms.get(roomCode);
+    if (!room || room.phase !== GAME_PHASES.PLAYING) return;
+
+    if (votingTimers.has(roomCode)) {
+      clearTimeout(votingTimers.get(roomCode));
+      votingTimers.delete(roomCode);
+    }
+
+    game.startVoting(roomCode, requesterId || room.hostId);
+    io.to(roomCode).emit(SOCKET_EVENTS.VOTING_STARTED, { roundNumber: room.round });
+
+    const activePlayers = game._getActivePlayers(room);
+    const eligible = activePlayers.filter(p => !p.eliminated && !p.isEliminated);
+    const votesCount = Object.keys(room.votes || {}).length;
+    const totalCount = eligible.length;
+
+    io.to(roomCode).emit('vote_progress', {
+      votesCount,
+      totalCount,
+    });
+
+    broadcastRoomState(roomCode);
+
+    if (votesCount >= totalCount && totalCount > 0) {
+      console.log(`[voting] All ${votesCount}/${totalCount} votes collected at start in ${roomCode}, ending voting in 1.2s...`);
+      setTimeout(() => executeEndVoting(roomCode, room.hostId), 1200);
+      return;
+    }
+
+    const hasHumans = eligible.some(p => !p.isBot);
+    const timeoutMs = hasHumans ? 45000 : 15000;
+
+    const timer = setTimeout(() => {
+      console.log(`[vote-timer] Fail-safe timer expired for room ${roomCode}`);
+      executeEndVoting(roomCode, room.hostId);
+    }, timeoutMs);
+
+    votingTimers.set(roomCode, timer);
+  } catch (e) {
+    console.warn('[triggerVoting] Error:', e.message);
+  }
+}
+
+function executeEndVoting(roomCode, requesterId) {
+  try {
+    const room = game.rooms.get(roomCode);
+    if (!room || room.phase !== GAME_PHASES.VOTING) return;
+
+    if (votingTimers.has(roomCode)) {
+      clearTimeout(votingTimers.get(roomCode));
+      votingTimers.delete(roomCode);
+    }
+
+    if (room.bots && room.bots.length > 0) {
+      try {
+        game.botVote(roomCode);
+      } catch (err) {
+        // ignore if already voted
+      }
+    }
+
+    const voteResult = game.endVoting(roomCode, requesterId || room.hostId);
+    const state = game.getRoomState(roomCode, null);
+
+    io.to(roomCode).emit(SOCKET_EVENTS.VOTE_RESULT, {
+      ejectedPlayerId: voteResult.eliminated?.id || null,
+      ejectedName: voteResult.eliminated?.username || null,
+      votes: voteResult.tally,
+      players: state.players,
+      roundNumber: state.round,
+      tie: voteResult.tie,
+      currentTurnPlayerId: state.currentTurnPlayerId,
+    });
+
+    broadcastRoomState(roomCode);
+
+    if (voteResult.winResult?.gameOver) {
+      const finalState = game.getRoomState(roomCode, null);
+      io.to(roomCode).emit(SOCKET_EVENTS.GAME_ENDED, {
+        winners: voteResult.winResult.survivors.map(s => ({ id: s.id, username: s.username })),
+        players: finalState.players,
+      });
+    } else {
+      setTimeout(() => {
+        handleTurnExecution(roomCode);
+      }, 1800);
+    }
+  } catch (e) {
+    console.warn('[executeEndVoting] Error ending voting:', e.message);
+  }
+}
+
+function handleTurnExecution(roomCode) {
+  const room = game.rooms.get(roomCode);
+  if (!room || room.phase !== GAME_PHASES.PLAYING) return;
+
+  const currentId = room.currentTurnPlayerId;
+  if (!currentId) return;
+
+  const player = room.players.get(currentId);
+  if (player && player.isBot) {
+    setTimeout(() => {
+      try {
+        const currentRoom = game.rooms.get(roomCode);
+        if (!currentRoom || currentRoom.phase !== GAME_PHASES.PLAYING || currentRoom.currentTurnPlayerId !== currentId) return;
+
+        // 1. Bot reveals card
+        const result = game.botPlayTurn(roomCode, currentId);
+        if (!result) return;
+
+        const p = currentRoom.players.get(currentId);
+        io.to(roomCode).emit(SOCKET_EVENTS.CARD_REVEALED, {
+          playerId: currentId,
+          username: p?.username || 'БОТ',
+          cardType: result.cardType,
+          cardData: result.card,
+          isExplaining: true,
+          currentTurnPlayerId: currentId,
+        });
+
+        broadcastRoomState(roomCode);
+
+        // 2. Simulated bot explanation pause (2.4s)
+        setTimeout(() => {
+          try {
+            const r = game.rooms.get(roomCode);
+            if (!r || r.phase !== GAME_PHASES.PLAYING || r.currentTurnPlayerId !== currentId) return;
+
+            // Bot finishes explanation
+            const finishResult = game.finishExplanation(roomCode, currentId);
+            io.to(roomCode).emit('turn_advanced', {
+              playerId: currentId,
+              nextTurnPlayerId: finishResult.nextTurnPlayerId,
+              roundComplete: finishResult.roundComplete,
+              roundNumber: finishResult.roundNumber,
+            });
+
+            if (finishResult.roundComplete) {
+              if (finishResult.noKickRound) {
+                // Round 1 completed without kicking anyone!
+                io.to(roomCode).emit('round_advanced', {
+                  roundNumber: 2,
+                  message: 'РАУНД 1 ЗАВЕРШЁН: Ознакомление окончено. Все участники переходят во 2-й раунд без изгнания!',
+                });
+                broadcastRoomState(roomCode);
+                setTimeout(() => handleTurnExecution(roomCode), 2000);
+              } else {
+                // Round >= 2: Start voting!
+                setTimeout(() => {
+                  triggerVoting(roomCode, r.hostId);
+                }, 1800);
+              }
+            } else {
+              broadcastRoomState(roomCode);
+              handleTurnExecution(roomCode);
+            }
+          } catch (e) {
+            console.warn('[bot-finish] Error finishing bot explanation:', e.message);
+          }
+        }, 2400);
+      } catch (e) {
+        console.warn('[bot-turn] Error playing turn:', e.message);
+      }
+    }, 1500);
+  }
+}
+
 io.on('connection', (socket) => {
   const { id } = socket;
   console.log(`[+] Connected: ${id}`);
-
-  // ── Helper: broadcast room state to everyone in the room ──────────────────
-  const broadcastRoomState = (roomCode) => {
-    const roomData = game.rooms.get(roomCode);
-    if (!roomData) return;
-
-    for (const [playerId] of roomData.players) {
-      // Skip bots
-      const player = roomData.players.get(playerId);
-      if (player?.isBot) continue;
-
-      const playerSocket = io.sockets.sockets.get(playerId);
-      if (playerSocket) {
-        const state = game.getRoomState(roomCode, playerId);
-        playerSocket.emit(SOCKET_EVENTS.ROOM_STATE, state);
-      }
-    }
-  };
 
   // ── Helper: emit error back to caller ─────────────────────────────────────
   const emitError = (msg) => {
@@ -221,91 +390,6 @@ io.on('connection', (socket) => {
       if (typeof ack === 'function') ack({ ok: false, error: e.message });
     }
   });
-
-  // ── Helper: bot turn processor ──────────────────────────────────────────
-  const handleTurnExecution = (roomCode) => {
-    const room = game.rooms.get(roomCode);
-    if (!room || room.phase !== GAME_PHASES.PLAYING) return;
-
-    const currentId = room.currentTurnPlayerId;
-    if (!currentId) return;
-
-    const player = room.players.get(currentId);
-    if (player && player.isBot) {
-      setTimeout(() => {
-        try {
-          const currentRoom = game.rooms.get(roomCode);
-          if (!currentRoom || currentRoom.phase !== GAME_PHASES.PLAYING || currentRoom.currentTurnPlayerId !== currentId) return;
-
-          // 1. Bot reveals card
-          const result = game.botPlayTurn(roomCode, currentId);
-          if (!result) return;
-
-          const p = currentRoom.players.get(currentId);
-          io.to(roomCode).emit(SOCKET_EVENTS.CARD_REVEALED, {
-            playerId: currentId,
-            username: p?.username || 'БОТ',
-            cardType: result.cardType,
-            cardData: result.card,
-            isExplaining: true,
-            currentTurnPlayerId: currentId,
-          });
-
-          broadcastRoomState(roomCode);
-
-          // 2. Simulated bot explanation pause (2.5s) so players can read the card
-          setTimeout(() => {
-            try {
-              const r = game.rooms.get(roomCode);
-              if (!r || r.phase !== GAME_PHASES.PLAYING || r.currentTurnPlayerId !== currentId) return;
-
-              // Bot finishes explanation
-              const finishResult = game.finishExplanation(roomCode, currentId);
-              io.to(roomCode).emit('turn_advanced', {
-                playerId: currentId,
-                nextTurnPlayerId: finishResult.nextTurnPlayerId,
-                roundComplete: finishResult.roundComplete,
-                roundNumber: finishResult.roundNumber,
-              });
-
-              if (finishResult.roundComplete) {
-                if (finishResult.noKickRound) {
-                  // Round 1 completed without kicking anyone!
-                  io.to(roomCode).emit('round_advanced', {
-                    roundNumber: 2,
-                    message: 'РАУНД 1 ЗАВЕРШЁН: Ознакомление окончено. Все участники переходят во 2-й раунд без изгнания!',
-                  });
-                  broadcastRoomState(roomCode);
-                  setTimeout(() => handleTurnExecution(roomCode), 2000);
-                } else {
-                  // Round >= 2: Start voting!
-                  setTimeout(() => {
-                    try {
-                      const rVote = game.rooms.get(roomCode);
-                      if (rVote && rVote.phase === GAME_PHASES.PLAYING) {
-                        game.startVoting(roomCode, rVote.hostId);
-                        io.to(roomCode).emit(SOCKET_EVENTS.VOTING_STARTED, { roundNumber: rVote.round });
-                        broadcastRoomState(roomCode);
-                      }
-                    } catch (e) {
-                      console.warn('[vote-auto] error starting voting:', e.message);
-                    }
-                  }, 1800);
-                }
-              } else {
-                broadcastRoomState(roomCode);
-                handleTurnExecution(roomCode);
-              }
-            } catch (e) {
-              console.warn('[bot-finish] Error finishing bot explanation:', e.message);
-            }
-          }, 2400);
-        } catch (e) {
-          console.warn('[bot-turn] Error playing turn:', e.message);
-        }
-      }, 1500);
-    }
-  };
 
   // ─────────────────────────────────────────────────────────────────────────
   // start_game
@@ -417,15 +501,9 @@ io.on('connection', (socket) => {
           setTimeout(() => handleTurnExecution(roomCode), 2000);
         } else {
           setTimeout(() => {
-            try {
-              const rVote = game.rooms.get(roomCode);
-              if (rVote && rVote.phase === GAME_PHASES.PLAYING) {
-                game.startVoting(roomCode, rVote.hostId);
-                io.to(roomCode).emit(SOCKET_EVENTS.VOTING_STARTED, { roundNumber: rVote.round });
-                broadcastRoomState(roomCode);
-              }
-            } catch (e) {
-              console.warn('[vote-auto] error starting voting:', e.message);
+            const rVote = game.rooms.get(roomCode);
+            if (rVote && rVote.phase === GAME_PHASES.PLAYING) {
+              triggerVoting(roomCode, rVote.hostId);
             }
           }, 1800);
         }
@@ -446,19 +524,7 @@ io.on('connection', (socket) => {
       const roomCode = rooms.getRoomCode(id);
       if (!roomCode) throw new Error('Вы не в комнате');
 
-      const room = game.startVoting(roomCode, id);
-      
-      // Emit to real players only
-      for (const [playerId] of room.players) {
-        const player = room.players.get(playerId);
-        if (player?.isBot) continue;
-        const playerSocket = io.sockets.sockets.get(playerId);
-        if (playerSocket) {
-          playerSocket.emit(SOCKET_EVENTS.VOTING_STARTED, { roundNumber: room.round });
-        }
-      }
-      
-      broadcastRoomState(roomCode);
+      triggerVoting(roomCode, id);
       if (typeof ack === 'function') ack({ ok: true });
     } catch (e) {
       emitError(e.message);
@@ -477,58 +543,26 @@ io.on('connection', (socket) => {
       const result = game.vote(roomCode, id, targetId);
       io.to(roomCode).emit(SOCKET_EVENTS.VOTE_CAST, { voterId: id });
 
-      // In test mode, auto end voting after human votes
       const room = game.rooms.get(roomCode);
-      if (room?.testMode) {
-        setTimeout(() => {
-          try {
-            const voteResult = game.endVoting(roomCode, room.hostId);
-            const state = game.getRoomState(roomCode, null);
+      if (room) {
+        const activePlayers = game._getActivePlayers(room);
+        const eligible = activePlayers.filter(p => !p.eliminated && !p.isEliminated);
+        const votesCount = Object.keys(room.votes || {}).length;
+        const totalCount = eligible.length;
 
-            // Emit to real players
-            for (const [playerId] of room.players) {
-              const player = room.players.get(playerId);
-              if (player?.isBot) continue;
-              const playerSocket = io.sockets.sockets.get(playerId);
-              if (playerSocket) {
-                const pState = game.getRoomState(roomCode, playerId);
-                playerSocket.emit(SOCKET_EVENTS.VOTE_RESULT, {
-                  ejectedPlayerId: voteResult.eliminated?.id || null,
-                  ejectedName: voteResult.eliminated?.username || null,
-                  votes: voteResult.tally,
-                  players: pState.players,
-                  roundNumber: pState.round,
-                  tie: voteResult.tie,
-                  currentTurnPlayerId: pState.currentTurnPlayerId,
-                });
-              }
-            }
+        io.to(roomCode).emit('vote_progress', {
+          votesCount,
+          totalCount,
+          voterId: id,
+        });
 
-            broadcastRoomState(roomCode);
-
-            if (voteResult.winResult?.gameOver) {
-              const finalState = game.getRoomState(roomCode, null);
-              for (const [playerId] of room.players) {
-                const player = room.players.get(playerId);
-                if (player?.isBot) continue;
-                const playerSocket = io.sockets.sockets.get(playerId);
-                if (playerSocket) {
-                  playerSocket.emit(SOCKET_EVENTS.GAME_ENDED, {
-                    winners: voteResult.winResult.survivors.map(s => ({ id: s.id, username: s.username })),
-                    players: finalState.players,
-                  });
-                }
-              }
-            } else {
-              // Start turn execution for the next round
-              setTimeout(() => {
-                handleTurnExecution(roomCode);
-              }, 1200);
-            }
-          } catch (e) {
-            console.warn('[test-vote] Error auto-ending vote:', e.message);
-          }
-        }, 1500);
+        // Conclude voting automatically if all eligible players/bots have voted
+        if (votesCount >= totalCount && totalCount > 0) {
+          console.log(`[vote] All ${votesCount}/${totalCount} votes collected in ${roomCode}, concluding voting in 1.2s...`);
+          setTimeout(() => {
+            executeEndVoting(roomCode, room.hostId);
+          }, 1200);
+        }
       }
 
       if (typeof ack === 'function') ack({ ok: true, result });
@@ -546,29 +580,8 @@ io.on('connection', (socket) => {
       const roomCode = rooms.getRoomCode(id);
       if (!roomCode) throw new Error('Вы не в комнате');
 
-      const result = game.endVoting(roomCode, id);
-      const state = game.getRoomState(roomCode, null);
-
-      io.to(roomCode).emit(SOCKET_EVENTS.VOTE_RESULT, {
-        ejectedPlayerId: result.eliminated?.id || null,
-        ejectedName: result.eliminated?.username || null,
-        votes: result.tally,
-        players: state.players,
-        roundNumber: state.round,
-        tie: result.tie,
-        currentTurnPlayerId: state.currentTurnPlayerId,
-      });
-
-      if (result.winResult?.gameOver) {
-        const finalState = game.getRoomState(roomCode, null);
-        io.to(roomCode).emit(SOCKET_EVENTS.GAME_ENDED, {
-          winners: result.winResult.survivors.map(s => ({ id: s.id, username: s.username })),
-          players: finalState.players,
-        });
-      }
-
-      broadcastRoomState(roomCode);
-      if (typeof ack === 'function') ack({ ok: true, result });
+      executeEndVoting(roomCode, id);
+      if (typeof ack === 'function') ack({ ok: true });
     } catch (e) {
       emitError(e.message);
       if (typeof ack === 'function') ack({ ok: false, error: e.message });

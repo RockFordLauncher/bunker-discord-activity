@@ -77,6 +77,7 @@ export default function Game3D({ gameState, setGameState, onToggle2D }) {
   }, [propTheme]);
 
   const myPlayer = players.find(p => p.id === myId);
+  const isHost = Boolean(myPlayer?.isHost || gameState.isHost || gameState.hostId === myId);
   const revealedRaw = myPlayer?.hand?.revealed;
   const revealedKey = revealedRaw ? JSON.stringify(revealedRaw) : '';
   const myRevealed = useMemo(() => revealedRaw || {}, [revealedKey]);
@@ -638,7 +639,7 @@ export default function Game3D({ gameState, setGameState, onToggle2D }) {
 
       {/* 11. VOTING OVERLAY */}
       {phase === 'voting' && !myPlayer?.eliminated && (
-        <VotingPanel players={players} myId={myId} />
+        <VotingPanel players={players} myId={myId} isHost={isHost} />
       )}
     </div>
   );

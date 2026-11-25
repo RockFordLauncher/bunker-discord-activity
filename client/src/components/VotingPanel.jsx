@@ -1,10 +1,22 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { socket } from '../socket.js';
 import { bunkerAudio } from '../audio/bunkerAudio.js';
 
-export default function VotingPanel({ players = [], myId }) {
+export default function VotingPanel({ players = [], myId, isHost }) {
   const [selected, setSelected] = useState(null);
   const [voted, setVoted] = useState(false);
+  const [voteProgress, setVoteProgress] = useState(null);
+
+  useEffect(() => {
+    const handleProgress = (data) => {
+      setVoteProgress(data);
+    };
+
+    socket.on('vote_progress', handleProgress);
+    return () => {
+      socket.off('vote_progress', handleProgress);
+    };
+  }, []);
 
   const myPlayer = players.find(p => p.id === myId);
   if (myPlayer?.eliminated) return null;
@@ -23,6 +35,15 @@ export default function VotingPanel({ players = [], myId }) {
     setSelected(id);
   };
 
+  const handleForceEnd = () => {
+    bunkerAudio.playPipBoySelect();
+    socket.emit('end_voting');
+  };
+
+  const votesDone = voteProgress?.votesCount ?? null;
+  const votesTotal = voteProgress?.totalCount ?? null;
+  const pct = (votesTotal && votesDone !== null) ? Math.min(100, Math.round((votesDone / votesTotal) * 100)) : 0;
+
   if (voted) {
     return (
       <div style={styles.overlay}>
@@ -32,7 +53,29 @@ export default function VotingPanel({ players = [], myId }) {
             <span style={styles.statusOk}>ПРИНЯТ</span>
           </div>
           <div style={styles.title}>ГОЛОС ЗАСЧИТАН</div>
-          <div style={styles.subtitle}>Ожидание решения остальных участников.</div>
+          <div style={styles.subtitle}>Ожидание решения остальных участников...</div>
+
+          {votesTotal !== null && (
+            <div style={styles.progressContainer}>
+              <div style={styles.progressLabel}>
+                <span>СОБРАНО ГОЛОСОВ:</span>
+                <span style={styles.progressCount}>{votesDone} / {votesTotal}</span>
+              </div>
+              <div style={styles.progressBarBg}>
+                <div style={{ ...styles.progressBarFill, width: `${pct}%` }} />
+              </div>
+            </div>
+          )}
+
+          {isHost && (
+            <button
+              style={styles.hostForceBtn}
+              onClick={handleForceEnd}
+              title="Принудительно подвести итоги голосования"
+            >
+              ПОДВЕСТИ ИТОГИ СЕЙЧАС (ХОСТ)
+            </button>
+          )}
         </div>
       </div>
     );
@@ -78,6 +121,16 @@ export default function VotingPanel({ players = [], myId }) {
         >
           ПОДТВЕРДИТЬ ВЫБОР
         </button>
+
+        {isHost && (
+          <button
+            style={styles.hostSubBtn}
+            onClick={handleForceEnd}
+            title="Завершить голосование досрочно"
+          >
+            ЗАВЕРШИТЬ ГОЛОСОВАНИЕ ДОСРОЧНО (ХОСТ)
+          </button>
+        )}
       </div>
     </div>
   );
@@ -201,4 +254,65 @@ const styles = {
     borderRadius: 2,
     textAlign: 'center',
   }),
+  progressContainer: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 6,
+    marginTop: 8,
+    padding: '10px 12px',
+    background: 'rgba(255, 255, 255, 0.03)',
+    border: '1px solid #262c35',
+    borderRadius: 2,
+  },
+  progressLabel: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    fontSize: 11,
+    color: '#8b95a5',
+    letterSpacing: 1,
+    fontWeight: 600,
+  },
+  progressCount: {
+    color: '#e4b64a',
+    fontWeight: 700,
+  },
+  progressBarBg: {
+    height: 4,
+    background: '#1b2026',
+    borderRadius: 2,
+    overflow: 'hidden',
+  },
+  progressBarFill: {
+    height: '100%',
+    background: 'linear-gradient(90deg, #d4a017, #4ea868)',
+    transition: 'width 0.3s ease',
+  },
+  hostForceBtn: {
+    marginTop: 12,
+    padding: '10px 14px',
+    border: '1px solid #d4a017',
+    background: 'rgba(212, 160, 23, 0.15)',
+    color: '#f0c040',
+    fontWeight: 700,
+    fontSize: 11,
+    letterSpacing: 1.2,
+    cursor: 'pointer',
+    borderRadius: 2,
+    textAlign: 'center',
+    transition: 'all 0.2s',
+  },
+  hostSubBtn: {
+    marginTop: 4,
+    padding: '8px 12px',
+    border: '1px solid #454d59',
+    background: 'transparent',
+    color: '#9aa4b2',
+    fontWeight: 600,
+    fontSize: 11,
+    letterSpacing: 1,
+    cursor: 'pointer',
+    borderRadius: 2,
+    textAlign: 'center',
+    transition: 'all 0.2s',
+  },
 };

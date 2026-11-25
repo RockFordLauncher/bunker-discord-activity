@@ -12,26 +12,39 @@ VALID_SPECIAL_ACTIONS = [
     'poison'
 ]
 
+VALID_QUALITIES = ('good', 'neutral', 'bad')
+
 def make_list(raw_items, target=100):
     """
-    Takes a list of strings or dicts, ensures uniqueness, and formats as [{"id": i+1, "text": item}].
+    Takes a list of strings or dicts, ensures uniqueness, and formats as
+    [{"id": i+1, "text": item, "quality": "good" | "neutral" | "bad"}].
+    If quality is omitted on a dict or item is a string, defaults to "neutral".
     If target is specified, ensures at least target items.
     """
     seen = set()
     cleaned = []
     for it in raw_items:
-        text = it["text"] if isinstance(it, dict) else str(it).strip()
+        if isinstance(it, dict):
+            text = str(it["text"]).strip()
+            raw_q = it.get("quality")
+            quality = (str(raw_q).strip().lower() if raw_q is not None else "neutral") or "neutral"
+            if quality not in VALID_QUALITIES:
+                raise ValueError(f"Invalid quality '{quality}' for item '{text}'. Must be one of {VALID_QUALITIES}.")
+        else:
+            text = str(it).strip()
+            quality = "neutral"
+
         if text and text not in seen:
             seen.add(text)
-            cleaned.append(text)
+            cleaned.append({"text": text, "quality": quality})
     
     if len(cleaned) < target:
         raise ValueError(f"Expected at least {target} items, but got {len(cleaned)}!")
     
     # Take first target items
     res = []
-    for idx, text in enumerate(cleaned[:target], 1):
-        res.append({"id": idx, "text": text})
+    for idx, item in enumerate(cleaned[:target], 1):
+        res.append({"id": idx, "text": item["text"], "quality": item["quality"]})
     return res
 
 def make_specials(raw_specials, target=100):
