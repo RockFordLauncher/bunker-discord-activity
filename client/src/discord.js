@@ -38,15 +38,32 @@ export async function setupDiscord() {
     }
 
     // 2. Exchange authorization code for access token & user profile via backend API
-    const tokenRes = await fetch('/api/token', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ code: authCode }),
-    }).catch(() => fetch('https://bunker-discord-activity.onrender.com/api/token', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ code: authCode }),
-    }));
+    // Inside Discord Activity iframe, relative backend routes go through /.proxy/...
+    const endpoints = [
+      '/.proxy/api/token',
+      '/api/token',
+      'https://bunker-discord-activity.onrender.com/api/token',
+    ];
+
+    let tokenRes = null;
+    let lastErr = '';
+    for (const url of endpoints) {
+      try {
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ code: authCode }),
+        });
+        if (res.ok) {
+          tokenRes = res;
+          break;
+        } else {
+          lastErr = `${url} -> HTTP ${res.status}`;
+        }
+      } catch (fetchErr) {
+        lastErr = `${url} -> ${fetchErr?.message || 'network error'}`;
+      }
+    }
 
     if (tokenRes && tokenRes.ok) {
       const { access_token, user: serverUser } = await tokenRes.json();
@@ -70,9 +87,8 @@ export async function setupDiscord() {
       }
       return { ready: true, inDiscord: true, user: null, error: 'User object missing' };
     } else {
-      const errBody = tokenRes ? await tokenRes.text() : 'No response';
-      console.error('[Discord] Token exchange failed:', tokenRes?.status, errBody);
-      return { ready: true, inDiscord: true, user: null, error: errBody };
+      console.error('[Discord] Token exchange failed on all endpoints:', lastErr);
+      return { ready: true, inDiscord: true, user: null, error: lastErr || 'Token exchange failed' };
     }
   } catch (e) {
     console.warn('[Discord] Not in Discord iframe or auth failed:', e?.message || e);

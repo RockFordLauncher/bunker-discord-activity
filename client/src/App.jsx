@@ -46,7 +46,15 @@ export default function App() {
         setGameState(prev => ({
           ...prev,
           discordUser: result.user,
+          discordError: null,
+          inDiscord: true,
           players: prev.players.map(p => (p.id === prev.myId ? { ...p, username: result.user.username, avatarUrl: result.user.avatarUrl } : p)),
+        }));
+      } else if (result) {
+        setGameState(prev => ({
+          ...prev,
+          inDiscord: Boolean(result.inDiscord),
+          discordError: result.error || null,
         }));
       }
     }).catch(err => console.error('[Discord] setupDiscord error:', err));

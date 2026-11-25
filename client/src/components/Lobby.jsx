@@ -168,7 +168,9 @@ export default function Lobby({ gameState, setGameState }) {
             </span>
           </div>
           <div style={styles.profileSub}>
-            {isDiscordLinked ? 'Профиль синхронизирован' : 'Локальный профиль'}
+            {isDiscordLinked
+              ? 'Профиль синхронизирован'
+              : (gameState?.discordError ? `Ошибка Discord: ${String(gameState.discordError).slice(0, 42)}` : 'Локальный профиль')}
           </div>
         </div>
       </div>
