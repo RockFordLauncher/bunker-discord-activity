@@ -971,10 +971,20 @@ export class Bunker3DScene {
   setPlayerHeadRotation(playerId, yaw, pitch) {
     if (!playerId) return;
     if (!this.playerHeadRotations) this.playerHeadRotations = new Map();
-    this.playerHeadRotations.set(playerId, {
-      yaw: Number(yaw) || 0,
-      pitch: Number(pitch) || 0,
-    });
+    const existing = this.playerHeadRotations.get(playerId);
+    if (existing) {
+      existing.targetYaw = Number(yaw) || 0;
+      existing.targetPitch = Number(pitch) || 0;
+    } else {
+      const y = Number(yaw) || 0;
+      const p = Number(pitch) || 0;
+      this.playerHeadRotations.set(playerId, {
+        targetYaw: y,
+        targetPitch: p,
+        yaw: y,
+        pitch: p,
+      });
+    }
   }
 
   syncPlayerCardProps(players, myId) {
@@ -1037,15 +1047,17 @@ export class Bunker3DScene {
       }
       this.scene.add(tableStackGroup);
 
-      // 2. 3D In-Hand Card Fan (comfortable lower chest / table-edge reading height)
+      // 2. 3D In-Hand Card Fan (comfortable chest / table-edge reading height)
       const inHandFanGroup = new THREE.Group();
-      const handRadius = 1.66; // ~0.44m in front of seat (2.1m)
+      const handRadius = 1.68; // ~0.42m in front of seat (2.1m), right between raised hands
       const handX = Math.cos(angle) * handRadius;
       const handZ = Math.sin(angle) * handRadius;
-      inHandFanGroup.position.set(handX, 0.93, handZ);
-      inHandFanGroup.rotation.y = Math.atan2(-handX, -handZ);
+      const fanBaseRotY = Math.atan2(-handX, -handZ);
+      inHandFanGroup.position.set(handX, 0.96, handZ);
+      inHandFanGroup.rotation.y = fanBaseRotY;
+      inHandFanGroup.userData.baseRotY = fanBaseRotY;
 
-      const fanGeo = new THREE.BoxGeometry(0.075, 0.11, 0.0022);
+      const fanGeo = new THREE.BoxGeometry(0.088, 0.128, 0.0028);
       const fanInnerMat = new THREE.MeshStandardMaterial({ color: 0xd9d2c5, roughness: 0.5 });
       const fanMats = [
         stackEdgeMat, stackEdgeMat,
@@ -1058,7 +1070,7 @@ export class Bunker3DScene {
       for (let c = 0; c < fanCount; c++) {
         const t = (c / (fanCount - 1)) - 0.5; // -0.5 .. +0.5
         const card = new THREE.Mesh(fanGeo, fanMats);
-        card.position.set(t * 0.11, -Math.abs(t) * 0.015, Math.abs(t) * 0.006);
+        card.position.set(t * 0.125, -Math.abs(t) * 0.018, Math.abs(t) * 0.007);
         card.rotation.set(0.42, 0, -t * 0.36); // tilted comfortably for reading
         card.castShadow = true;
         inHandFanGroup.add(card);
@@ -1080,7 +1092,8 @@ export class Bunker3DScene {
         tableStackGroup,
         inHandFanGroup,
         baseStackPos: new THREE.Vector3(stackX, 0.803, stackZ),
-        baseHandPos: new THREE.Vector3(handX, 0.93, handZ),
+        baseHandPos: new THREE.Vector3(handX, 0.96, handZ),
+        baseHandRotY: fanBaseRotY,
         holdWeight: initialHold ? 1 : 0,
       });
     });
@@ -1904,9 +1917,11 @@ export class Bunker3DScene {
         } else if (this.playerCardPoses.has(prop.playerId)) {
           isHolding = Boolean(this.playerCardPoses.get(prop.playerId));
         } else if (prop.player?.isBot) {
-          // Bots naturally peek at their cards occasionally, especially on their turn
+          // Bots naturally hold cards during their turn and occasionally check their hand
           const isTurn = prop.playerId === this.currentTurnPlayerId;
-          isHolding = isTurn && Math.sin(time * 0.45 + idx * 1.7) > 0.25;
+          isHolding = isTurn
+            ? (Math.sin(time * 0.65 + idx * 1.7) > -0.35)
+            : (Math.sin(time * 0.28 + idx * 2.4) > 0.72);
         }
 
         const targetHold = isHolding ? 1 : 0;
@@ -1921,12 +1936,15 @@ export class Bunker3DScene {
           prop.tableStackGroup.position.y = prop.baseStackPos.y - w * 0.025;
         }
 
-        // Animate 3D In-Hand Fan (visible for remote players when holdWeight > 0)
+        // Animate 3D In-Hand Fan (visible for remote players when holdWeight > 0, follows torso turn)
         if (prop.inHandFanGroup && !prop.isLocal) {
           const fanScale = Math.max(0.001, w);
           prop.inHandFanGroup.visible = fanScale > 0.02;
           prop.inHandFanGroup.scale.set(fanScale, fanScale, fanScale);
           prop.inHandFanGroup.position.y = prop.baseHandPos.y + Math.sin(time * 1.85 + idx * 2.17) * 0.004;
+          const netRot = this.playerHeadRotations?.get(prop.playerId);
+          const torsoYaw = netRot ? netRot.yaw * 0.35 : 0;
+          prop.inHandFanGroup.rotation.y = (prop.baseHandRotY ?? prop.inHandFanGroup.userData.baseRotY ?? 0) + torsoYaw;
         }
       });
     }
@@ -1964,7 +1982,14 @@ export class Bunker3DScene {
       const cardProp = playerId ? propByPlayerId.get(playerId) : null;
       const holdW = cardProp ? cardProp.holdWeight : (ud.isLocal && this.cardsRaised ? 1 : 0);
 
-      // Torso: breathing + weight shift + speaking lean (keep torso & shoulders aligned so arms never detach in FP)
+      // Smoothly interpolate remote player's synchronized head/body look direction
+      const netRot = !ud.isLocal && playerId ? this.playerHeadRotations?.get(playerId) : null;
+      if (netRot) {
+        netRot.yaw += (netRot.targetYaw - netRot.yaw) * 0.18;
+        netRot.pitch += (netRot.targetPitch - netRot.pitch) * 0.18;
+      }
+
+      // Torso: breathing + weight shift + speaking lean + full-body follow-through matching FP view!
       if (ud.torso && base.torso) {
         ud.torso.scale.z = base.torso.scale.z * (1 + breath * 0.032);
         ud.torso.scale.y = base.torso.scale.y * (1 + breath * 0.014);
@@ -1974,52 +1999,55 @@ export class Bunker3DScene {
           ud.torso.rotation.y = base.torso.rot.y + this.currentYaw * 0.35 + sway * 0.012;
           ud.torso.rotation.x = base.torso.rot.x + fpPitchLean + breath * 0.012 + speakW * 0.05;
           ud.torso.rotation.z = base.torso.rot.z - this.currentYaw * 0.05 + sway * 0.010;
+        } else if (netRot) {
+          const remotePitchLean = Math.max(-0.12, Math.min(0.22, -netRot.pitch * 0.22));
+          ud.torso.rotation.y = base.torso.rot.y + netRot.yaw * 0.35 + sway * 0.012;
+          ud.torso.rotation.x = base.torso.rot.x + remotePitchLean + breath * 0.012 + speakW * 0.08;
+          ud.torso.rotation.z = base.torso.rot.z - netRot.yaw * 0.05 + sway * 0.010;
         } else {
-          ud.torso.rotation.x = base.torso.rot.x + breath * 0.014 + speakW * 0.12;
+          ud.torso.rotation.x = base.torso.rot.x + breath * 0.014 + speakW * 0.08 + holdW * 0.06;
           ud.torso.rotation.y = base.torso.rot.y + Math.sin(time * 0.38 + phase) * 0.035;
           ud.torso.rotation.z = base.torso.rot.z + sway * 0.025;
         }
       }
 
-      // Head: real-time synchronized rotation from remote players, or natural glances for bots
+      // Head (attached to torso so it never detaches!): synchronized rotation for remote players, natural glances for bots
       if (ud.head && base.head && !ud.isLocal) {
-        const netRot = this.playerHeadRotations?.get(playerId);
         if (netRot) {
-          // Player's actual head rotation looking around the room!
-          ud.head.rotation.y = base.head.rot.y - netRot.yaw;
-          ud.head.rotation.x = base.head.rot.x + netRot.pitch;
+          ud.head.rotation.y = base.head.rot.y + netRot.yaw * 0.65;
+          ud.head.rotation.x = base.head.rot.x - netRot.pitch * 0.78;
           ud.head.rotation.z = base.head.rot.z;
         } else {
           const glanceYaw = Math.sin(time * 0.42 + phase) * 0.24 + Math.sin(time * 0.95 + phase * 2) * 0.08;
-          const glancePitch = -0.05 + Math.sin(time * 0.65 + phase) * 0.06 + holdW * 0.14;
+          const glancePitch = -0.05 + Math.sin(time * 0.65 + phase) * 0.06 + holdW * 0.22;
           ud.head.rotation.y = base.head.rot.y + glanceYaw;
           ud.head.rotation.x = base.head.rot.x + glancePitch;
           ud.head.rotation.z = base.head.rot.z + Math.sin(time * 0.5 + phase) * 0.03;
         }
       }
 
-      // Arms & Forearms: idle gestures, speaking gestures, and card-holding vs table-stack placement
+      // Arms & Forearms: idle gestures, speaking gestures, and clear card-holding lift vs table-stack placement
       const gestureL = Math.sin(time * (1.1 + style * 0.2) + phase) * (0.025 + speakW * 0.06);
       const gestureR = Math.cos(time * (0.95 + style * 0.2) + phase) * (0.025 + speakW * 0.07);
 
       if (ud.leftArm && base.leftArm) {
-        ud.leftArm.rotation.x = base.leftArm.rot.x + breath * 0.015 + holdW * 0.28 + gestureL * (1 - holdW * 0.6);
-        ud.leftArm.rotation.y = base.leftArm.rot.y - holdW * 0.16;
+        ud.leftArm.rotation.x = base.leftArm.rot.x + breath * 0.015 + holdW * 0.44 + gestureL * (1 - holdW * 0.65);
+        ud.leftArm.rotation.y = base.leftArm.rot.y - holdW * 0.22;
         ud.leftArm.rotation.z = base.leftArm.rot.z + breath * 0.018;
       }
       if (ud.rightArm && base.rightArm) {
-        ud.rightArm.rotation.x = base.rightArm.rot.x + breath * 0.015 + holdW * 0.28 + gestureR * (1 - holdW * 0.6);
-        ud.rightArm.rotation.y = base.rightArm.rot.y + holdW * 0.16;
+        ud.rightArm.rotation.x = base.rightArm.rot.x + breath * 0.015 + holdW * 0.44 + gestureR * (1 - holdW * 0.65);
+        ud.rightArm.rotation.y = base.rightArm.rot.y + holdW * 0.22;
         ud.rightArm.rotation.z = base.rightArm.rot.z - breath * 0.018;
       }
 
       if (ud.lForearm && base.leftForearm) {
-        ud.lForearm.rotation.x = base.leftForearm.rot.x + holdW * 0.30 + gestureL * 0.8;
-        ud.lForearm.rotation.y = base.leftForearm.rot.y - holdW * 0.12 + Math.cos(time * 0.7 + phase) * 0.02;
+        ud.lForearm.rotation.x = base.leftForearm.rot.x + holdW * 0.48 + gestureL * 0.8;
+        ud.lForearm.rotation.y = base.leftForearm.rot.y - holdW * 0.18 + Math.cos(time * 0.7 + phase) * 0.02;
       }
       if (ud.rForearm && base.rightForearm) {
-        ud.rForearm.rotation.x = base.rightForearm.rot.x + holdW * 0.30 + gestureR * 0.8;
-        ud.rForearm.rotation.y = base.rightForearm.rot.y + holdW * 0.12 + Math.sin(time * 0.8 + phase) * 0.02;
+        ud.rForearm.rotation.x = base.rightForearm.rot.x + holdW * 0.48 + gestureR * 0.8;
+        ud.rForearm.rotation.y = base.rightForearm.rot.y + holdW * 0.18 + Math.sin(time * 0.8 + phase) * 0.02;
       }
 
       // Headset mic blinking diode (green glow pulsing)

@@ -721,9 +721,12 @@ function applySeatedPose(root, bones, elements) {
     }
   });
 
-  // 6. Parent arms under torso so upper body & shoulders rotate together seamlessly (no detached arms!)
+  // 6. Parent head & arms under torso so upper body, neck, and shoulders rotate together seamlessly (no detached head or arms!)
   if (bones.torso) {
     root.updateMatrixWorld(true);
+    if (bones.head && !isDescendantOf(bones.head, bones.torso)) {
+      bones.torso.attach(bones.head);
+    }
     if (bones.leftArm && !isDescendantOf(bones.leftArm, bones.torso)) {
       bones.torso.attach(bones.leftArm);
     }
