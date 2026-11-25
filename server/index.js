@@ -3,6 +3,11 @@ import express from 'express';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
 import cors from 'cors';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 import { BunkerGame } from './game.js';
 import { RoomManager } from './rooms.js';
@@ -46,6 +51,10 @@ const rooms = new RoomManager(game);
 app.get('/health', (_req, res) => {
   res.json({ status: 'ok', ...rooms.stats(), uptime: process.uptime() });
 });
+
+// Serve frontend static build (client/dist)
+const distPath = path.resolve(__dirname, '../client/dist');
+app.use(express.static(distPath));
 
 app.get('/rooms/:code', (req, res) => {
   try {
@@ -615,6 +624,11 @@ io.on('connection', (socket) => {
       broadcastRoomState(roomCode);
     }
   });
+});
+
+// SPA fallback: any non-API route serves index.html
+app.get('*', (req, res) => {
+  res.sendFile(path.join(distPath, 'index.html'));
 });
 
 // ─── Start ────────────────────────────────────────────────────────────────────
